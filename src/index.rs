@@ -274,6 +274,7 @@ mod tests {
     use crate::id::ResourceId;
     use crate::index::discover_paths;
     use crate::ResourceIndex;
+    use canonical_path::CanonicalPathBuf;
     use std::fs::{File, Permissions};
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
@@ -304,17 +305,18 @@ mod tests {
         path: PathBuf,
         size: Option<u64>,
         name: Option<&str>,
-    ) -> File {
+    ) -> (File, PathBuf) {
         let mut file_path = path.clone();
         if let Some(file_name) = name {
             file_path.push(file_name);
         } else {
             file_path.push(Uuid::new_v4().to_string());
         }
-        let file = File::create(file_path).expect("Could not create temp file");
+        let file = File::create(file_path.clone())
+            .expect("Could not create temp file");
         file.set_len(size.unwrap_or(0))
             .expect("Could not set file size");
-        file
+        (file, file_path)
     }
 
     fn run_test_and_clean_up(
@@ -447,7 +449,8 @@ mod tests {
             let mut actual = ResourceIndex::build(path.clone())
                 .expect("Could not build index");
 
-            create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+            let (_, expected_path) =
+                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
 
             let update = actual
                 .update()
@@ -468,6 +471,21 @@ mod tests {
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
+
+            let added_key =
+                CanonicalPathBuf::canonicalize(&expected_path.clone())
+                    .expect("CanonicalPathBuf should be fine");
+            assert_eq!(
+                update
+                    .added
+                    .get(&added_key)
+                    .expect("Key exists")
+                    .id,
+                ResourceId {
+                    file_size: FILE_SIZE_2,
+                    crc32: CRC32_2
+                }
+            )
         })
     }
 
@@ -495,6 +513,11 @@ mod tests {
             assert_eq!(actual.size(), 0);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 0);
+
+            assert!(update.deleted.contains(&ResourceId {
+                file_size: FILE_SIZE_1,
+                crc32: CRC32_1
+            }))
         })
     }
 
@@ -502,7 +525,7 @@ mod tests {
     fn should_not_update_index_on_files_without_permissions() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            let file = create_file_at(
+            let (file, _) = create_file_at(
                 path.clone(),
                 Some(FILE_SIZE_2),
                 Some(FILE_NAME_2),
@@ -516,12 +539,6 @@ mod tests {
 
             file.set_permissions(Permissions::from_mode(0o222))
                 .expect("Should be fine");
-
-            // let mut name_from = path.clone();
-            // name_from.push(FILE_NAME_2);
-            // let mut name_to = path.clone();
-            // path.clone().push(FILE_NAME_3);
-            // std::fs::rename(name_from, name_to);
 
             let update = actual
                 .update()
@@ -582,7 +599,7 @@ mod tests {
     #[test]
     fn should_fail_when_indexing_file_without_read_rights() {
         run_test_and_clean_up(|path| {
-            let file = create_file_at(path.clone(), Some(1), None);
+            let (file, _) = create_file_at(path.clone(), Some(1), None);
             file.set_permissions(Permissions::from_mode(0o222))
                 .expect("Should be fine");
 
