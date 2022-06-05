@@ -1,14 +1,14 @@
-use std::{fs, num::TryFromIntError};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::{fs, num::TryFromIntError};
 
 use crc32fast::Hasher;
 use log;
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct ResourceId {
-    pub(crate) file_size: u64,
-    pub(crate) crc32: u32,
+    pub file_size: u64,
+    pub crc32: u32,
 }
 
 impl ResourceId {
@@ -56,7 +56,7 @@ impl ResourceId {
         log::trace!("checksum: {:#02x}", crc32);
         assert_eq!(
             bytes_read,
-        (file_size.try_into() as Result<u32, TryFromIntError>).unwrap()
+            (file_size.try_into() as Result<u32, TryFromIntError>).unwrap()
         );
 
         ResourceId { file_size, crc32 }
