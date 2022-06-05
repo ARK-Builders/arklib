@@ -1,11 +1,11 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate canonical_path;
-
 mod id;
 mod index;
 mod meta;
-
+mod pdf;
+pub use self::pdf::*;
 use index::ResourceIndex;
 
 use std::collections::HashMap;

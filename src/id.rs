@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, num::TryFromIntError};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
@@ -54,7 +54,10 @@ impl ResourceId {
         let crc32: u32 = hasher.finalize().into();
         log::trace!("{} bytes has been read", bytes_read);
         log::trace!("checksum: {:#02x}", crc32);
-        assert_eq!(bytes_read, file_size.try_into().unwrap());
+        assert_eq!(
+            bytes_read,
+        (file_size.try_into() as Result<u32, TryFromIntError>).unwrap()
+        );
 
         ResourceId { file_size, crc32 }
     }
