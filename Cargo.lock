@@ -742,7 +742,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c2352bd1d0bceb871cb9d40f24360c8133c11d7486b68b5381c1dd1a32015e3"
 dependencies = [
  "libc",
- "pkg-config",
+ "libloading",
 ]
 
 [[package]]
@@ -781,6 +781,16 @@ name = "libc"
 version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349d5a591cd28b49e1d1037471617a32ddcda5731b99419008085f72d5a53836"
+
+[[package]]
+name = "libloading"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efbc0f03f9a775e9f6aed295c6a1ba2253c5757a9e03d55c6caa46a681abcddd"
+dependencies = [
+ "cfg-if 1.0.0",
+ "winapi",
+]
 
 [[package]]
 name = "lock_api"
@@ -1017,12 +1027,13 @@ dependencies = [
 [[package]]
 name = "pathfinder_rasterize"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder_rasterizer#fc738d2386c2f12a7270e48b020d21e673fd75cf"
+source = "git+https://github.com/nagato-chan/pathfinder_rasterize#fd45433c96303d826e82c9e8d9129f84f5314e7b"
 dependencies = [
  "font",
  "gl",
  "image 0.24.2",
  "khronos-egl",
+ "libloading",
  "pathfinder_canvas",
  "pathfinder_color",
  "pathfinder_content",
@@ -1187,12 +1198,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "pkg-config"
-version = "0.3.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1df8c4ec4b0627e53bdf214615ad287367e482558cf84b109250b37464dc03ae"
 
 [[package]]
 name = "png"

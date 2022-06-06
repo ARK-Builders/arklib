@@ -18,7 +18,7 @@ canonical-path = "2.0.2"
 image = "0.24.2"
 pdf_render = { git = "https://github.com/pdf-rs/pdf_render" }
 pdf = { git = "https://github.com/pdf-rs/pdf", features = ['threads'] }
-pathfinder_rasterize = { git = "https://github.com/s3bk/pathfinder_rasterizer" }
+pathfinder_rasterize = { git = "https://github.com/nagato-chan/pathfinder_rasterize" }
 pathfinder_geometry = { git = "https://github.com/servo/pathfinder" }
 [dev-dependencies]
 uuid = { version = "0.8.2", features = ["v4"] }
