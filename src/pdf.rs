@@ -1,17 +1,8 @@
-use std::{
-    env,
-    path::PathBuf,
-    sync::{Arc, Mutex, Once},
-};
+use std::{env, path::PathBuf};
 
 use image::DynamicImage;
 
 use pdfium_render::prelude::*;
-
-lazy_static! {
-    static ref EVENT_QUEUE: Mutex<bool> = Mutex::new(false);
-    static ref ONCE: Once = Once::new();
-}
 
 pub enum PDFQuailty {
     High,
@@ -36,6 +27,14 @@ pub fn render_preview_page(
     // EVENT_QUEUE.lock().unwrap();
 
     let render_cfg = PdfBitmapConfig::new();
+    let render_cfg = match quailty {
+        PDFQuailty::High => render_cfg
+            .set_target_width(2000)
+            .set_maximum_height(2000),
+        PDFQuailty::Medium => render_cfg,
+        PDFQuailty::Low => render_cfg.thumbnail(50),
+    }
+    .rotate_if_landscape(PdfBitmapRotation::Degrees90, true);
     Pdfium::new(initialize_pdfium())
         .load_pdf_from_bytes(data, None)
         .unwrap()
@@ -62,6 +61,10 @@ pub fn render_preview_page(
 
 #[test]
 fn test_multi_pdf_generate() {
+    use tempdir::TempDir;
+    let dir = TempDir::new("arklib_test").unwrap();
+    let tmp_path = dir.path();
+    println!("temp path: {}", tmp_path.display());
     for i in 0..2 {
         use std::{fs::File, io::Read};
         let mut pdf_reader = File::open("tests/test.pdf").unwrap();
@@ -69,8 +72,8 @@ fn test_multi_pdf_generate() {
         let mut bytes = Vec::new();
         pdf_reader.read_to_end(&mut bytes).unwrap();
         println!("Rendering {}", &i);
-        let img = render_preview_page(bytes.as_slice(), PDFQuailty::Low, None);
-        img.save(format!("tests/test{}.png", &i))
+        let img = render_preview_page(bytes.as_slice(), PDFQuailty::Low);
+        img.save(tmp_path.join(format!("test{}.png", &i)))
             .expect("cannot save image");
     }
 }
