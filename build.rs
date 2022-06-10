@@ -26,10 +26,6 @@ fn main() {
             name.push("android");
             return;
         }
-        Environment::Musl => {
-            // compile_error!("support for musl-libc is on the way")
-        }
-
         _ => {}
     }
     dbg!(&name);
@@ -46,9 +42,7 @@ fn main() {
             minor: 0,
             patch: 0,
         } => name.push("mac"),
-        _ => {
-            // compile_error!("unsupported os");
-        }
+        _ => {}
     }
     dbg!(&name);
     match target.architecture {
@@ -56,9 +50,7 @@ fn main() {
         Architecture::Aarch64(_) => name.push("arm64"),
         Architecture::X86_32(_) => name.push("x86"),
         Architecture::X86_64 => name.push("x64"),
-        _ => {
-            // compile_error!("unsupported arch");
-        }
+        _ => {}
     }
     dbg!(&name);
     let filename = name.join("-").to_string();
@@ -69,21 +61,18 @@ fn main() {
         PDFIUM_VERSION, filename
     );
 
-    let request = ureq::get(url.as_str()).call().unwrap().into_reader();
-    // client
-    //     .transfer()
-    //     .write_function(|data| {
-    //         reader.extend_from_slice(data);
-    //         Ok(data.len())
-    //     })
-    //     .unwrap();
-    // client.perform().unwrap();
+    let request = ureq::get(url.as_str())
+        .call()
+        .unwrap()
+        .into_reader();
     let ar = GzDecoder::new(request);
     let mut ar = Archive::new(ar);
     ar.unpack(&out_dir).unwrap();
     match target.operating_system {
         OperatingSystem::Windows => fs_extra::file::move_file(
-            PathBuf::from(&out_dir).join("bin").join("pdfium.dll"),
+            PathBuf::from(&out_dir)
+                .join("bin")
+                .join("pdfium.dll"),
             PathBuf::from(&out_dir).join("pdfium.dll"),
             &CopyOptions::new(),
         )
@@ -94,28 +83,21 @@ fn main() {
             minor: 0,
             patch: 0,
         } => fs_extra::file::move_file(
-            PathBuf::from(&out_dir).join("bin").join("libpdfium.dylib"),
+            PathBuf::from(&out_dir)
+                .join("bin")
+                .join("libpdfium.dylib"),
             PathBuf::from(&out_dir).join("libpdfium.dylib"),
             &CopyOptions::new(),
         )
         .unwrap(),
         _ => fs_extra::file::move_file(
-            PathBuf::from(&out_dir).join("lib").join("libpdfium.so"),
+            PathBuf::from(&out_dir)
+                .join("lib")
+                .join("libpdfium.so"),
             PathBuf::from(&out_dir).join("libpdfium.so"),
             &CopyOptions::new(),
         )
         .unwrap(),
     };
-    // for file in ar.entries().unwrap() {
-    //     let mut file = file.unwrap();
-
-    //     if file.path().unwrap().to_str().unwrap()
-    //         == format!("{}{}", "lib/", lib_os_name.to_str().unwrap())
-    //     {
-    //         let mut dest_file = File::create(&dest_path).unwrap();
-    //         io::copy(&mut file, &mut dest_file).unwrap();
-    //     }
-    // }
-    // sleep(Duration::from_millis(10000));
     println!("cargo:rerun-if-changed=build.rs");
 }
