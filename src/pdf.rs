@@ -22,9 +22,7 @@ fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
 pub fn render_preview_page(
     data: &[u8],
     quailty: PDFQuailty,
-    // font_path: Option<String>,
 ) -> DynamicImage {
-    // EVENT_QUEUE.lock().unwrap();
 
     let render_cfg = PdfBitmapConfig::new();
     let render_cfg = match quailty {
@@ -46,18 +44,6 @@ pub fn render_preview_page(
         .as_image()
 }
 
-// #[test]
-// fn test_pdf_generate() {
-//     use std::{fs::File, io::Read};
-//     let mut pdf_reader = File::open("tests/test.pdf").unwrap();
-
-//     let mut bytes = Vec::new();
-//     pdf_reader.read_to_end(&mut bytes).unwrap();
-
-//     let img = render_preview_page(bytes.as_slice(), PDFQuailty::Low, None);
-//     img.save("tests/test.png")
-//         .expect("cannot save image");
-// }
 
 #[test]
 fn test_multi_pdf_generate() {
