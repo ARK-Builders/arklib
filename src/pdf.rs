@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::{env, ffi::OsString, path::PathBuf};
 
 use image::DynamicImage;
 
@@ -10,8 +10,8 @@ pub enum PDFQuailty {
     Low,
 }
 fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
-    let out_path = env::var("OUT_DIR").unwrap_or("".to_string());
-
+    let out_path = env!("OUT_DIR");
+    
     let pdfium_libpath =
         PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
     let bindings = Pdfium::bind_to_library(pdfium_libpath.display())
