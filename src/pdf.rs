@@ -1,6 +1,7 @@
-use std::{env, ffi::OsString, path::PathBuf};
+use std::{env, path::PathBuf};
 
 use image::DynamicImage;
+use log::debug;
 
 use pdfium_render::prelude::*;
 
@@ -11,20 +12,34 @@ pub enum PDFQuality {
 }
 fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
     let out_path = env!("OUT_DIR");
+    debug!("{}", &out_path);
+    let pdfium_libpath = PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
+    let bindings = Pdfium::bind_to_library("/system/lib64/libpdfium.so");
+    debug!("Get from local");
+    let bindings = bindings.or_else(|_| Pdfium::bind_to_system_library());
+    debug!("Get from system");
+    match bindings {
+        Ok(binding) => binding,
+        Err(e) => {
+            unsafe {
+                match libloading::Library::new("/system/lib64/libpdfium.so") {
+                    Ok(_) => {
+                        debug!("OK");
+                    }
+                    Err(e) => debug!("{:?}", e),
+                };
+            }
 
-    let pdfium_libpath =
-        PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
-    let bindings = Pdfium::bind_to_library(pdfium_libpath.display())
-        .or_else(|_| Pdfium::bind_to_system_library())
-        .unwrap();
-    bindings
+            // debug!("{:?}", e);
+            panic!()
+        }
+    }
+    // bindings
 }
 pub fn render_preview_page(data: &[u8], quailty: PDFQuality) -> DynamicImage {
     let render_cfg = PdfBitmapConfig::new();
     let render_cfg = match quailty {
-        PDFQuality::High => render_cfg
-            .set_target_width(2000)
-            .set_maximum_height(2000),
+        PDFQuality::High => render_cfg.set_target_width(2000).set_maximum_height(2000),
         PDFQuality::Medium => render_cfg,
         PDFQuality::Low => render_cfg.thumbnail(50),
     }
@@ -52,8 +67,10 @@ fn test_multi_pdf_generate() {
 
         let mut bytes = Vec::new();
         pdf_reader.read_to_end(&mut bytes).unwrap();
+
         println!("Rendering {}", &i);
         let img = render_preview_page(bytes.as_slice(), PDFQuality::Low);
+
         img.save(tmp_path.join(format!("test{}.png", &i)))
             .expect("cannot save image");
     }
