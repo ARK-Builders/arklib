@@ -29,7 +29,7 @@ fn main() {
         }
         _ => {}
     }
-    dbg!(&name);
+
     match target.operating_system {
         OperatingSystem::Windows => name.push("win"),
         OperatingSystem::Linux => {
@@ -45,7 +45,7 @@ fn main() {
         } => name.push("mac"),
         _ => {}
     }
-    dbg!(&name);
+
     match target.architecture {
         Architecture::Arm(_) => name.push("arm"),
         Architecture::Aarch64(_) => name.push("arm64"),
