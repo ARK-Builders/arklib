@@ -27,7 +27,6 @@ fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
             panic!("{:?}", e)
         }
     }
-    // bindings
 }
 pub fn render_preview_page(data: &[u8], quailty: PDFQuality) -> DynamicImage {
     let render_cfg = PdfBitmapConfig::new();

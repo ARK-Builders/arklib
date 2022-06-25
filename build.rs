@@ -24,6 +24,7 @@ fn main() {
     let mut name = vec!["pdfium"];
     match target.environment {
         Environment::Android | Environment::Androideabi => {
+            // The prebuilt pdfium library is included in the arklib-android, no more fetching work needed.
             name.push("android");
             return;
         }
