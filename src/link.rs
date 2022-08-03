@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::hash::{Hash, Hasher};
 use std::{collections::hash_map::DefaultHasher, fmt};
 use std::{fs::File, io::Write, path::PathBuf};
@@ -50,7 +51,7 @@ impl Link {
     /// Write zipped file to path
     ///
     /// Note that the `created_time` field will be omitted, in order to avoid confliction between desktop and mobile.
-    pub async fn write_to_path(&mut self, path: PathBuf) {
+    pub async fn write_to_path<P: AsRef<Path>>(&mut self, path: P) {
         self.created_time = None;
         let j = serde_json::to_string(self).unwrap();
         let link_file = File::create(path).unwrap();
