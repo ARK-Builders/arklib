@@ -7,6 +7,7 @@ use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use url::Url;
+use futures::executor;
 
 /// .link File used in ARK Shelf.
 #[derive(Debug, Deserialize, Serialize)]
@@ -48,6 +49,16 @@ impl Link {
         url.hash(&mut s);
         s.finish().to_string()
     }
+
+
+    pub fn load(path: String) -> String{
+        let p = PathBuf::from(path);
+        let link = Link::from(p);
+
+        serde_json::to_string(&link).unwrap()
+    }
+
+
     /// Write zipped file to path
     ///
     /// Note that the `created_time` field will be omitted, in order to avoid confliction between desktop and mobile.
@@ -62,13 +73,17 @@ impl Link {
             .expect("cannot create link.json");
         zip.write(j.as_bytes()).unwrap();
 
-        let preview_data = Link::get_preview(self.url.clone())
-            .await
+        let preview_data = executor::block_on(Link::get_preview(self.url.clone()))
             .unwrap_or_default();
         let image_data = preview_data.fetch_image().await.unwrap_or_default();
         zip.start_file("link.png", options).unwrap();
         zip.write(&image_data).unwrap();
         zip.finish().unwrap();
+    }
+
+    /// Synchronized version of Write zipped file to path
+    pub fn write_to_path_sync<P: AsRef<Path>>(&mut self, path: P) {
+        executor::block_on(self.write_to_path(path))
     }
     /// Get metadata of the link.
     pub async fn get_preview<S>(url: S) -> Result<OpenGraph, reqwest::Error>
@@ -218,6 +233,7 @@ impl From<PathBuf> for Link {
         let j_raw = zip.by_name("link.json").unwrap();
 
         let j = serde_json::from_reader(j_raw).unwrap();
+        
         Self {
             created_time: Some(created_time),
             ..j
