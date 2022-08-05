@@ -7,7 +7,6 @@ use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use url::Url;
-use futures::executor;
 
 /// .link File used in ARK Shelf.
 #[derive(Debug, Deserialize, Serialize)]
@@ -51,18 +50,18 @@ impl Link {
     }
 
 
-    pub fn load(path: String) -> String{
-        let p = PathBuf::from(path);
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<String, serde_json::Error>{
+        let p = path.as_ref().to_path_buf();
         let link = Link::from(p);
 
-        serde_json::to_string(&link).unwrap()
+        serde_json::to_string(&link)
     }
 
 
     /// Write zipped file to path
     ///
     /// Note that the `created_time` field will be omitted, in order to avoid confliction between desktop and mobile.
-    pub async fn write_to_path<P: AsRef<Path>>(&mut self, path: P) {
+    pub async fn write_to_path<P: AsRef<Path>>(&mut self, path: P, download_preview: bool) {
         self.created_time = None;
         let j = serde_json::to_string(self).unwrap();
         let link_file = File::create(path).unwrap();
@@ -72,18 +71,20 @@ impl Link {
         zip.start_file("link.json", options)
             .expect("cannot create link.json");
         zip.write(j.as_bytes()).unwrap();
-
-        let preview_data = executor::block_on(Link::get_preview(self.url.clone()))
-            .unwrap_or_default();
-        let image_data = preview_data.fetch_image().await.unwrap_or_default();
-        zip.start_file("link.png", options).unwrap();
-        zip.write(&image_data).unwrap();
+        if download_preview{
+            let preview_data = Link::get_preview(self.url.clone()).await
+                .unwrap_or_default();
+            let image_data = preview_data.fetch_image().await.unwrap_or_default();
+            zip.start_file("link.png", options).unwrap();
+            zip.write(&image_data).unwrap();
+        }
         zip.finish().unwrap();
     }
 
     /// Synchronized version of Write zipped file to path
-    pub fn write_to_path_sync<P: AsRef<Path>>(&mut self, path: P) {
-        executor::block_on(self.write_to_path(path))
+    pub fn write_to_path_sync<P: AsRef<Path>>(&mut self, path: P, download_preview: bool) {
+        let runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
+        runtime.block_on(self.write_to_path(path, download_preview));
     }
     /// Get metadata of the link.
     pub async fn get_preview<S>(url: S) -> Result<OpenGraph, reqwest::Error>
@@ -169,7 +170,7 @@ pub struct OpenGraph {
 impl OpenGraph {
     pub async fn fetch_image(&self) -> Option<Vec<u8>> {
         if let Some(url) = &self.image {
-            let mut res = reqwest::get(url).await.unwrap();
+            let res = reqwest::get(url).await.unwrap();
             Some(res.bytes().await.unwrap().to_vec())
         } else {
             None
@@ -227,16 +228,46 @@ impl OpenGraphTag {
 }
 impl From<PathBuf> for Link {
     fn from(path: PathBuf) -> Self {
-        let file = File::open(path).unwrap();
-        let created_time = file.metadata().unwrap().created().unwrap();
-        let mut zip = zip::ZipArchive::new(file).unwrap();
-        let j_raw = zip.by_name("link.json").unwrap();
+        let file = File::open(path).expect("Open link file");
+        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap()).expect("Open zip archive");
+        let j_raw = zip.by_name("link.json").expect("Find link.json in the zip archive");
 
-        let j = serde_json::from_reader(j_raw).unwrap();
+        let j = serde_json::from_reader(j_raw).expect("Parse link.json");
         
-        Self {
-            created_time: Some(created_time),
+        let mut created_at = None;
+        if let Ok(metadata) = file.metadata(){
+            if let Ok(created_time) = metadata.created(){
+                created_at = Some(created_time);
+            // Some platform doesn't support created time, fallback to modified time.
+            } else if let Ok(modified_time) = metadata.modified(){
+                created_at = Some(modified_time);
+            }
+        }
+
+        Self{
+            created_time: created_at,
             ..j
         }
+        
+
     }
+}
+
+#[test]
+fn test_create_link_file() {
+    use tempdir::TempDir;
+    let dir = TempDir::new("arklib_test").unwrap();
+    let tmp_path = dir.path();
+    println!("temp path: {}", tmp_path.display());
+    let url = Url::parse("https://example.com/").unwrap();
+    let mut link = Link::new(String::from("title"), String::from("desc"), url);
+    let hash = link.format_name();
+    assert_eq!(hash, "5257664237369877164");
+    let link_file_path = tmp_path.join(format!("{}.link", hash));
+    link.write_to_path_sync(link_file_path.clone(), true);
+    let link_json = Link::load(link_file_path.clone()).unwrap();
+    let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
+    assert_eq!(j.title, "title");
+    assert_eq!(j.desc, "desc");
+    assert_eq!(j.url.as_str(), "https://example.com/");
 }
