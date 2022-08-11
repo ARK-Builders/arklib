@@ -14,22 +14,14 @@ pub struct Link {
     title: String,
     desc: String,
     url: Url,
-
-    // Only shared on desktop
-    // Surely it is little bit hack but we need to share the item between Rust and JS, so we have to bypass it
-    // with such a hacky way.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    created_time: Option<std::time::SystemTime>,
 }
 
 impl Link {
     pub fn new(title: String, desc: String, url: Url) -> Self {
-        let created_time = std::time::SystemTime::now();
         Self {
             title,
             desc,
-            url,
-            created_time: Some(created_time),
+            url
         }
     }
     /// Get formatted name for .link
@@ -59,10 +51,7 @@ impl Link {
 
 
     /// Write zipped file to path
-    ///
-    /// Note that the `created_time` field will be omitted, in order to avoid confliction between desktop and mobile.
     pub async fn write_to_path<P: AsRef<Path>>(&mut self, path: P, download_preview: bool) {
-        self.created_time = None;
         let j = serde_json::to_string(self).unwrap();
         let link_file = File::create(path).unwrap();
         let mut zip = zip::ZipWriter::new(link_file);
@@ -233,23 +222,9 @@ impl From<PathBuf> for Link {
         let j_raw = zip.by_name("link.json").expect("Find link.json in the zip archive");
 
         let j = serde_json::from_reader(j_raw).expect("Parse link.json");
-        
-        let mut created_at = None;
-        if let Ok(metadata) = file.metadata(){
-            if let Ok(created_time) = metadata.created(){
-                created_at = Some(created_time);
-            // Some platform doesn't support created time, fallback to modified time.
-            } else if let Ok(modified_time) = metadata.modified(){
-                created_at = Some(modified_time);
-            }
-        }
-
         Self{
-            created_time: created_at,
             ..j
         }
-        
-
     }
 }
 
