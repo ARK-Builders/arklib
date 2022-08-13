@@ -2,7 +2,7 @@ use std::path::Path;
 use std::hash::{Hash, Hasher};
 use std::{collections::hash_map::DefaultHasher, fmt};
 use std::{fs::File, io::Write, path::PathBuf};
-
+use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -42,11 +42,23 @@ impl Link {
     }
 
 
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<String, serde_json::Error>{
+    pub fn load_json<P: AsRef<Path>>(path: P) -> Result<String, Error> {
         let p = path.as_ref().to_path_buf();
         let link = Link::from(p);
 
-        serde_json::to_string(&link)
+        let json = serde_json::to_string(&link).unwrap();
+        Ok(json)
+    }
+
+    pub fn load_preview<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, Error> {
+        let file = File::open(path.as_ref()).expect("Open link file");
+        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap()).expect("Open zip archive");
+        let mut j_raw = zip.by_name("link.png").expect("Find link.json in the zip archive");
+        
+        // let mut file = File::create(cache_path.as_ref().join(path.as_ref().file_name().unwrap())).unwrap();
+        let mut dst = vec![];
+        std::io::copy(&mut j_raw, &mut dst).unwrap();
+        Ok(dst)
     }
 
 
@@ -215,6 +227,7 @@ impl OpenGraphTag {
         }
     }
 }
+
 impl From<PathBuf> for Link {
     fn from(path: PathBuf) -> Self {
         let file = File::open(path).expect("Open link file");
@@ -240,9 +253,11 @@ fn test_create_link_file() {
     assert_eq!(hash, "5257664237369877164");
     let link_file_path = tmp_path.join(format!("{}.link", hash));
     link.write_to_path_sync(link_file_path.clone(), true);
-    let link_json = Link::load(link_file_path.clone()).unwrap();
+    let link_json = Link::load_json(link_file_path.clone()).unwrap();
     let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
+    let image_file = Link::load_preview(link_file_path.clone());
     assert_eq!(j.title, "title");
     assert_eq!(j.desc, "desc");
     assert_eq!(j.url.as_str(), "https://example.com/");
+    assert_ne!(image_file.unwrap().is_empty(), false);
 }
