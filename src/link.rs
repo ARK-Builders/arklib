@@ -53,12 +53,17 @@ impl Link {
     pub fn load_preview<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, Error> {
         let file = File::open(path.as_ref()).expect("Open link file");
         let mut zip = zip::ZipArchive::new(file.try_clone().unwrap()).expect("Open zip archive");
-        let mut j_raw = zip.by_name("link.png").expect("Find link.json in the zip archive");
-        
-        // let mut file = File::create(cache_path.as_ref().join(path.as_ref().file_name().unwrap())).unwrap();
-        let mut dst = vec![];
-        std::io::copy(&mut j_raw, &mut dst).unwrap();
-        Ok(dst)
+        for i in 0..zip.len() {
+            let mut file = zip.by_index(i).unwrap();
+            let path = file.enclosed_name().unwrap();
+            if path.to_str() == Some("link.png") {
+                // let mut file = File::create(cache_path.as_ref().join(path.as_ref().file_name().unwrap())).unwrap();
+                let mut dst: Vec<u8> = Vec::new();
+                std::io::copy(&mut file, &mut dst).unwrap();
+                return Ok(dst)
+            }
+        }
+        Err(Error::msg("An image.png file not found in the zip file"))
     }
 
 
@@ -252,12 +257,17 @@ fn test_create_link_file() {
     let hash = link.format_name();
     assert_eq!(hash, "5257664237369877164");
     let link_file_path = tmp_path.join(format!("{}.link", hash));
-    link.write_to_path_sync(link_file_path.clone(), true);
-    let link_json = Link::load_json(link_file_path.clone()).unwrap();
-    let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
-    let image_file = Link::load_preview(link_file_path.clone());
-    assert_eq!(j.title, "title");
-    assert_eq!(j.desc, "desc");
-    assert_eq!(j.url.as_str(), "https://example.com/");
-    assert_ne!(image_file.unwrap().is_empty(), false);
+    for download_preview in [true, false]{
+        link.write_to_path_sync(link_file_path.clone(), download_preview);
+        let link_json = Link::load_json(link_file_path.clone()).unwrap();
+        let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
+        assert_eq!(j.title, "title");
+        assert_eq!(j.desc, "desc");
+        assert_eq!(j.url.as_str(), "https://example.com/");
+        let _ = match  Link::load_preview(link_file_path.clone()) {
+            Ok(_) => assert_eq!(download_preview, true),
+            Err(_) => assert_eq!(download_preview, false),
+        };
+    }
+
 }
