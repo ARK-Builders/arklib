@@ -20,6 +20,7 @@ pub struct ResourceIndex {
 
 #[derive(Debug)]
 pub struct IndexUpdate {
+    pub updated: HashSet<&'static Path>,
     pub deleted: HashSet<ResourceId>,
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
 }
@@ -63,7 +64,7 @@ impl ResourceIndex {
 
         let curr_entries = discover_paths(self.root.clone());
 
-        //assuming that collections manipulation is
+        // assuming that collections manipulation is
         // quicker than asking `path.exists()` for every path
         let curr_paths: Paths = curr_entries.keys().cloned().collect();
         let prev_paths: Paths = self.path2meta.keys().cloned().collect();
@@ -119,7 +120,7 @@ impl ResourceIndex {
             .collect();
 
         let mut deleted: HashSet<ResourceId> = HashSet::new();
-
+        let mut updated = HashSet::new();
         // treating deleted and updated paths as deletions
         prev_paths
             .difference(&preserved_paths)
@@ -170,7 +171,11 @@ impl ResourceIndex {
             );
         }
 
-        Ok(IndexUpdate { deleted, added })
+        Ok(IndexUpdate {
+            updated,
+            deleted,
+            added,
+        })
     }
 }
 

@@ -2,8 +2,8 @@
 extern crate lazy_static;
 extern crate canonical_path;
 pub mod id;
-mod index;
-mod meta;
+pub mod index;
+pub mod meta;
 pub mod pdf;
 
 use index::ResourceIndex;
