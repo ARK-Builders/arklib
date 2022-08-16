@@ -57,7 +57,6 @@ impl Link {
             let mut file = zip.by_index(i).unwrap();
             let path = file.enclosed_name().unwrap();
             if path.to_str() == Some("link.png") {
-                // let mut file = File::create(cache_path.as_ref().join(path.as_ref().file_name().unwrap())).unwrap();
                 let mut dst: Vec<u8> = Vec::new();
                 std::io::copy(&mut file, &mut dst).unwrap();
                 return Ok(dst)
