@@ -41,7 +41,7 @@ impl Link {
         s.finish().to_string()
     }
 
-
+    // Load the link json from the .link file.
     pub fn load_json<P: AsRef<Path>>(path: P) -> Result<String, Error> {
         let p = path.as_ref().to_path_buf();
         let link = Link::from(p);
@@ -50,6 +50,7 @@ impl Link {
         Ok(json)
     }
 
+    // Load the image.png file from the .link file if exists.
     pub fn load_preview<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, Error> {
         let file = File::open(path.as_ref()).expect("Open link file");
         let mut zip = zip::ZipArchive::new(file.try_clone().unwrap()).expect("Open zip archive");
