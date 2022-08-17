@@ -1,11 +1,11 @@
-use std::path::Path;
-use std::hash::{Hash, Hasher};
-use std::{collections::hash_map::DefaultHasher, fmt};
-use std::{fs::File, io::Write, path::PathBuf};
 use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use std::hash::{Hash, Hasher};
+use std::path::Path;
+use std::{collections::hash_map::DefaultHasher, fmt};
+use std::{fs::File, io::Write, path::PathBuf};
 use url::Url;
 
 /// .link File used in ARK Shelf.
@@ -18,11 +18,7 @@ pub struct Link {
 
 impl Link {
     pub fn new(title: String, desc: String, url: Url) -> Self {
-        Self {
-            title,
-            desc,
-            url
-        }
+        Self { title, desc, url }
     }
     /// Get formatted name for .link
     pub fn format_name(&self) -> String {
@@ -53,34 +49,42 @@ impl Link {
     // Load the image.png file from the .link file if exists.
     pub fn load_preview<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, Error> {
         let file = File::open(path.as_ref()).expect("Open link file");
-        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap()).expect("Open zip archive");
+        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap())
+            .expect("Open zip archive");
         for i in 0..zip.len() {
             let mut file = zip.by_index(i).unwrap();
             let path = file.enclosed_name().unwrap();
             if path.to_str() == Some("link.png") {
                 let mut dst: Vec<u8> = Vec::new();
                 std::io::copy(&mut file, &mut dst).unwrap();
-                return Ok(dst)
+                return Ok(dst);
             }
         }
         Err(Error::msg("An image.png file not found in the zip file"))
     }
 
-
     /// Write zipped file to path
-    pub async fn write_to_path<P: AsRef<Path>>(&mut self, path: P, download_preview: bool) {
+    pub async fn write_to_path<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        download_preview: bool,
+    ) {
         let j = serde_json::to_string(self).unwrap();
         let link_file = File::create(path).unwrap();
         let mut zip = zip::ZipWriter::new(link_file);
-        let options =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
         zip.start_file("link.json", options)
             .expect("cannot create link.json");
         zip.write(j.as_bytes()).unwrap();
-        if download_preview{
-            let preview_data = Link::get_preview(self.url.clone()).await
+        if download_preview {
+            let preview_data = Link::get_preview(self.url.clone())
+                .await
                 .unwrap_or_default();
-            let image_data = preview_data.fetch_image().await.unwrap_or_default();
+            let image_data = preview_data
+                .fetch_image()
+                .await
+                .unwrap_or_default();
             zip.start_file("link.png", options).unwrap();
             zip.write(&image_data).unwrap();
         }
@@ -88,8 +92,13 @@ impl Link {
     }
 
     /// Synchronized version of Write zipped file to path
-    pub fn write_to_path_sync<P: AsRef<Path>>(&mut self, path: P, download_preview: bool) {
-        let runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
+    pub fn write_to_path_sync<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        download_preview: bool,
+    ) {
+        let runtime =
+            tokio::runtime::Runtime::new().expect("Unable to create a runtime");
         runtime.block_on(self.write_to_path(path, download_preview));
     }
     /// Get metadata of the link.
@@ -108,12 +117,19 @@ impl Link {
             .default_headers(header)
             .build()
             .unwrap();
-        let scraper = client.get(url.into()).send().await?.text().await?;
+        let scraper = client
+            .get(url.into())
+            .send()
+            .await?
+            .text()
+            .await?;
         let html = Html::parse_document(&scraper.as_str());
-        let title = select_og(&html, OpenGraphTag::Title).or(select_title(&html));
+        let title =
+            select_og(&html, OpenGraphTag::Title).or(select_title(&html));
         Ok(OpenGraph {
             title,
-            description: select_og(&html, OpenGraphTag::Description).or(select_desc(&html)),
+            description: select_og(&html, OpenGraphTag::Description)
+                .or(select_desc(&html)),
             url: select_og(&html, OpenGraphTag::Url),
             image: select_og(&html, OpenGraphTag::Image),
             object_type: select_og(&html, OpenGraphTag::Type),
@@ -123,7 +139,9 @@ impl Link {
 }
 
 fn select_og(html: &Html, tag: OpenGraphTag) -> Option<String> {
-    let selector = Selector::parse(&format!("meta[property=\"og:{}\"]", tag.as_str())).unwrap();
+    let selector =
+        Selector::parse(&format!("meta[property=\"og:{}\"]", tag.as_str()))
+            .unwrap();
 
     if let Some(element) = html.select(&selector).next() {
         if let Some(value) = element.value().attr("content") {
@@ -236,13 +254,14 @@ impl OpenGraphTag {
 impl From<PathBuf> for Link {
     fn from(path: PathBuf) -> Self {
         let file = File::open(path).expect("Open link file");
-        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap()).expect("Open zip archive");
-        let j_raw = zip.by_name("link.json").expect("Find link.json in the zip archive");
+        let mut zip = zip::ZipArchive::new(file.try_clone().unwrap())
+            .expect("Open zip archive");
+        let j_raw = zip
+            .by_name("link.json")
+            .expect("Find link.json in the zip archive");
 
         let j = serde_json::from_reader(j_raw).expect("Parse link.json");
-        Self{
-            ..j
-        }
+        Self { ..j }
     }
 }
 
@@ -257,17 +276,16 @@ fn test_create_link_file() {
     let hash = link.format_name();
     assert_eq!(hash, "5257664237369877164");
     let link_file_path = tmp_path.join(format!("{}.link", hash));
-    for download_preview in [true, false]{
+    for download_preview in [true, false] {
         link.write_to_path_sync(link_file_path.clone(), download_preview);
         let link_json = Link::load_json(link_file_path.clone()).unwrap();
         let j: Link = serde_json::from_str(link_json.as_str()).unwrap();
         assert_eq!(j.title, "title");
         assert_eq!(j.desc, "desc");
         assert_eq!(j.url.as_str(), "https://example.com/");
-        let _ = match  Link::load_preview(link_file_path.clone()) {
+        let _ = match Link::load_preview(link_file_path.clone()) {
             Ok(_) => assert_eq!(download_preview, true),
             Err(_) => assert_eq!(download_preview, false),
         };
     }
-
 }
