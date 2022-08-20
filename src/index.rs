@@ -26,6 +26,17 @@ pub struct IndexUpdate {
 }
 
 impl ResourceIndex {
+    pub fn new<P: AsRef<Path>>(
+        root_path: P,
+        res: HashMap<CanonicalPathBuf, ResourceMeta>,
+    ) -> Self {
+        Self {
+            path2meta: res,
+            collisions: HashMap::new(),
+            ids: HashSet::new(),
+            root: root_path.as_ref().to_path_buf(),
+        }
+    }
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
         self.path2meta.len()
