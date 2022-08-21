@@ -26,12 +26,12 @@ pub struct IndexUpdate {
 }
 
 impl ResourceIndex {
-    pub fn new<P: AsRef<Path>>(
+    pub fn from_resources<P: AsRef<Path>>(
         root_path: P,
-        res: HashMap<CanonicalPathBuf, ResourceMeta>,
+        resources: HashMap<CanonicalPathBuf, ResourceMeta>,
     ) -> Self {
         Self {
-            path2meta: res,
+            path2meta: resources,
             collisions: HashMap::new(),
             ids: HashSet::new(),
             root: root_path.as_ref().to_path_buf(),
@@ -123,7 +123,9 @@ impl ResourceIndex {
                                 );
                                 false
                             }
-                            Ok(curr_modified) => curr_modified > prev_modified,
+                            Ok(curr_modified) => {
+                                curr_modified > prev_modified.into()
+                            }
                         },
                     }
                 }
