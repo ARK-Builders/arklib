@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use canonical_path::CanonicalPathBuf;
 use walkdir::{DirEntry, WalkDir};
@@ -20,9 +21,15 @@ pub struct ResourceIndex {
 
 #[derive(Debug)]
 pub struct IndexUpdate {
-    pub updated: HashSet<&'static Path>,
-    pub deleted: HashSet<ResourceId>,
+    pub updated: HashMap<CanonicalPathBuf,ResourceMeta>,
+    pub deleted: HashMap<CanonicalPathBuf,ResourceMeta>,
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
+}
+
+pub struct Difference {
+    pub updated: Vec<CanonicalPathBuf>,
+    pub deleted: Vec<CanonicalPathBuf>,
+    pub added: Vec<CanonicalPathBuf>,
 }
 
 impl ResourceIndex {
@@ -35,6 +42,45 @@ impl ResourceIndex {
             collisions: HashMap::new(),
             ids: HashSet::new(),
             root: root_path.as_ref().to_path_buf(),
+        }
+    }
+    pub fn calc_diff(&self) -> Difference {
+        let (present, absend): (Vec<_>, Vec<_>) = self
+            .path2meta
+            .keys()
+            .partition(|path| path.exists());
+
+        let updated = present
+            .iter()
+            .map(|&it| (it, &self.path2meta[it]))
+            .filter(|(path, meta)| {
+                path.metadata().unwrap().modified().unwrap()
+                    > Into::<SystemTime>::into(meta.modified)
+            })
+            .map(|(path, _)| path)
+            .cloned()
+            .collect::<Vec<_>>();
+        let added: Vec<_> = discover_paths(&self.root)
+            .iter()
+            .filter(|(path, _)| !&self.path2meta.contains_key(*path))
+            .map(|(path, _)| path)
+            .cloned()
+            .collect();
+        log::debug!(
+            "{} absent, {} updated, {} added",
+            absend.len(),
+            updated.len(),
+            added.len()
+        );
+        let deleted = absend
+            .iter()
+            .cloned()
+            .cloned()
+            .collect::<Vec<_>>();
+        Difference {
+            updated,
+            deleted,
+            added,
         }
     }
     pub fn size(&self) -> usize {
@@ -74,28 +120,39 @@ impl ResourceIndex {
         log::trace!("Known paths:\n{:?}", self.path2meta.keys());
 
         let curr_entries = discover_paths(self.root.clone());
-
         // assuming that collections manipulation is
         // quicker than asking `path.exists()` for every path
         let curr_paths: Paths = curr_entries.keys().cloned().collect();
         let prev_paths: Paths = self.path2meta.keys().cloned().collect();
+        // Union set of curr_paths and prev_paths (path already existed, but may be updated)
         let preserved_paths: Paths = curr_paths
             .intersection(&prev_paths)
             .cloned()
             .collect();
 
-        let created_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
+        let (created_paths, deleted_paths): (HashMap<_, _>, HashMap<_, _>) =
+            curr_entries.iter().filter_map(|(path,meta)| 
+            
+            if !preserved_paths.contains(path.as_canonical_path()){
+                Some((path,meta))
+            }
+        else {
+            None
+        }
+        ).partition(|(path,meta)| 
+        // If the path was included in prev_path, it should had been deleted from device.
+        !prev_paths.contains(path.as_canonical_path()));
+        let created_paths = created_paths
             .iter()
-            .filter_map(|(path, entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
-                    Some((path.clone(), entry.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
+            .map(|(&c, &d)| (c.clone(), d.clone()))
+            .collect::<HashMap<_, _>>();
+        let deleted_paths = deleted_paths
+            .iter()
+            .map(|(&c, &d)| (c.clone(), d.clone()))
+            .collect::<HashMap<_, _>>();
 
         log::info!("Checking updated paths");
+
         let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
             .into_iter()
             .filter(|(path, entry)| {
@@ -124,35 +181,41 @@ impl ResourceIndex {
                                 false
                             }
                             Ok(curr_modified) => {
-                                curr_modified > prev_modified.into()
+                                curr_modified > SystemTime::from( prev_modified)
                             }
                         },
                     }
                 }
             })
             .collect();
+        deleted_paths.iter().chain(updated_paths.iter()).for_each(|(path,_)| 
+        if let Some(meta) = self.path2meta.remove(path.as_canonical_path()) {
+            self.ids.remove(&meta.id);
+        } else {
+            log::warn!("Path {} was not known", path.display());
+        }
+    );
 
-        let mut deleted: HashSet<ResourceId> = HashSet::new();
-        let mut updated = HashSet::new();
         // treating deleted and updated paths as deletions
-        prev_paths
-            .difference(&preserved_paths)
-            .cloned()
-            .chain(updated_paths.keys().cloned())
-            .for_each(|path| {
-                if let Some(meta) = self.path2meta.remove(&path) {
-                    let k = self.collisions.remove(&meta.id).unwrap_or(1);
-                    if k > 1 {
-                        self.collisions.insert(meta.id, k - 1);
-                    } else {
-                        log::debug!("Removing {:?} from index", meta.id);
-                        self.ids.remove(&meta.id);
-                        deleted.insert(meta.id);
-                    }
-                } else {
-                    log::warn!("Path {} was not known", path.display());
-                }
-            });
+        // prev_paths
+        //     .difference(&preserved_paths)
+        //     .cloned()
+        //     .chain(updated_paths.keys().cloned())
+        //     .for_each(|path| {
+        //         if let Some(meta) = self.path2meta.remove(&path) {
+        //             let k = self.collisions.remove(&meta.id).unwrap_or(1);
+        //             if k > 1 {
+        //                 self.collisions.insert(meta.id, k - 1);
+        //             } else {
+        //                 log::debug!("Removing {:?} from index", meta.id);
+        //                 self.ids.remove(&meta.id);
+        //                 // TODO: Replace with HashSet<Path>
+        //                 // deleted.insert(meta.id);
+        //             }
+        //         } else {
+        //             log::warn!("Path {} was not known", path.display());
+        //         }
+        //     });
 
         let added: HashMap<CanonicalPathBuf, ResourceMeta> =
             scan_metadata(updated_paths)
@@ -165,7 +228,7 @@ impl ResourceIndex {
                 .collect();
 
         for (path, meta) in added.iter() {
-            if deleted.contains(&meta.id) {
+            if deleted_paths.contains_key(path) {
                 // emitting the resource as both deleted and added
                 // (renaming a duplicate might remain undetected)
                 log::info!(
@@ -185,8 +248,8 @@ impl ResourceIndex {
         }
 
         Ok(IndexUpdate {
-            updated,
-            deleted,
+            updated: HashMap::new(),
+            deleted: HashMap::new(),
             added,
         })
     }

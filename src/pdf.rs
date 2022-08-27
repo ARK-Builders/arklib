@@ -13,7 +13,7 @@ pub enum PDFQuality {
     Medium,
     Low,
 }
-fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
+pub fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
     let out_path = env!("OUT_DIR");
     let pdfium_lib_path =
         PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
