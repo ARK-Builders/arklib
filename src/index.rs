@@ -21,8 +21,8 @@ pub struct ResourceIndex {
 
 #[derive(Debug)]
 pub struct IndexUpdate {
-    pub updated: HashMap<CanonicalPathBuf,ResourceMeta>,
-    pub deleted: HashMap<CanonicalPathBuf,ResourceMeta>,
+    pub updated: HashMap<CanonicalPathBuf, ResourceMeta>,
+    pub deleted: HashMap<CanonicalPathBuf, ResourceMeta>,
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
 }
 
@@ -131,17 +131,20 @@ impl ResourceIndex {
             .collect();
 
         let (created_paths, deleted_paths): (HashMap<_, _>, HashMap<_, _>) =
-            curr_entries.iter().filter_map(|(path,meta)| 
-            
-            if !preserved_paths.contains(path.as_canonical_path()){
-                Some((path,meta))
-            }
-        else {
-            None
-        }
-        ).partition(|(path,meta)| 
-        // If the path was included in prev_path, it should had been deleted from device.
-        !prev_paths.contains(path.as_canonical_path()));
+            curr_entries
+                .iter()
+                .filter_map(|(path, meta)| {
+                    if !preserved_paths.contains(path.as_canonical_path()) {
+                        Some((path, meta))
+                    } else {
+                        None
+                    }
+                })
+                // If the path was included in prev_path, it should had been deleted from device.
+                .partition(|(path, meta)| {
+                    !prev_paths.contains(path.as_canonical_path())
+                });
+
         let created_paths = created_paths
             .iter()
             .map(|(&c, &d)| (c.clone(), d.clone()))
@@ -181,20 +184,25 @@ impl ResourceIndex {
                                 false
                             }
                             Ok(curr_modified) => {
-                                curr_modified > SystemTime::from( prev_modified)
+                                curr_modified > SystemTime::from(prev_modified)
                             }
                         },
                     }
                 }
             })
             .collect();
-        deleted_paths.iter().chain(updated_paths.iter()).for_each(|(path,_)| 
-        if let Some(meta) = self.path2meta.remove(path.as_canonical_path()) {
-            self.ids.remove(&meta.id);
-        } else {
-            log::warn!("Path {} was not known", path.display());
-        }
-    );
+        deleted_paths
+            .iter()
+            .chain(updated_paths.iter())
+            .for_each(|(path, _)| {
+                if let Some(meta) =
+                    self.path2meta.remove(path.as_canonical_path())
+                {
+                    self.ids.remove(&meta.id);
+                } else {
+                    log::warn!("Path {} was not known", path.display());
+                }
+            });
 
         // treating deleted and updated paths as deletions
         // prev_paths

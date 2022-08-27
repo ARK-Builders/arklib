@@ -106,7 +106,7 @@ impl From<CanonicalPathBuf> for ResourceKind {
             .unwrap_or_default();
 
         if ext == "link" {
-            let link =  match parse_link(&path) {
+            let link = match parse_link(&path) {
                 Ok(x) => x,
                 Err(e) => {
                     log::error!(
