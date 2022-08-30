@@ -65,7 +65,7 @@ fn test_multi_pdf_generate() {
         let pdf_reader = File::open("tests/test.pdf").unwrap();
 
         println!("Rendering {}", &i);
-        let img = render_preview_page(pdf_reader, PDFQuality::High);
+        let img = render_preview_page(pdf_reader, PDFQuality::Medium);
 
         img.save(tmp_path.join(format!("test{}.png", &i)))
             .expect("cannot save image");

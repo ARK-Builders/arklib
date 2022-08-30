@@ -23,9 +23,9 @@ strum = { version = "0.24.1", features = ["derive"] }
 mediatype = "0.19.9"
 mime_guess = "2.0.4"
 infer = "0.9.0"
-zip = "0.6.2"
-serde_json = "1.0.85"
-serde = { version = "1.0.144", features = ["derive"] }
+# zip = "0.6.2"
+# serde_json = "1.0.85"
+# serde = { version = "1.0.144", features = ["derive"] }
 
 [dev-dependencies]
 tempdir = "0.3.7"
