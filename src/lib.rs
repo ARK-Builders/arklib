@@ -4,7 +4,7 @@ extern crate canonical_path;
 pub mod id;
 pub mod index;
 pub mod link;
-mod meta;
+pub mod meta;
 pub mod pdf;
 
 use index::ResourceIndex;
