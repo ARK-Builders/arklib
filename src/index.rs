@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use canonical_path::CanonicalPathBuf;
 use walkdir::{DirEntry, WalkDir};
@@ -20,11 +21,68 @@ pub struct ResourceIndex {
 
 #[derive(Debug)]
 pub struct IndexUpdate {
-    pub deleted: HashSet<ResourceId>,
+    // pub updated: HashMap<CanonicalPathBuf, ResourceMeta>,
+    pub deleted: HashMap<CanonicalPathBuf, ResourceMeta>,
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
 }
 
+pub struct Difference {
+    pub updated: Vec<CanonicalPathBuf>,
+    pub deleted: Vec<CanonicalPathBuf>,
+    pub added: Vec<CanonicalPathBuf>,
+}
+
 impl ResourceIndex {
+    pub fn from_resources<P: AsRef<Path>>(
+        root_path: P,
+        resources: HashMap<CanonicalPathBuf, ResourceMeta>,
+    ) -> Self {
+        Self {
+            path2meta: resources,
+            collisions: HashMap::new(),
+            ids: HashSet::new(),
+            root: root_path.as_ref().to_path_buf(),
+        }
+    }
+    pub fn calc_diff(&self) -> Difference {
+        let (present, absend): (Vec<_>, Vec<_>) = self
+            .path2meta
+            .keys()
+            .partition(|path| path.exists());
+
+        let updated = present
+            .iter()
+            .map(|&it| (it, &self.path2meta[it]))
+            .filter(|(path, meta)| {
+                path.metadata().unwrap().modified().unwrap()
+                    > Into::<SystemTime>::into(meta.modified)
+            })
+            .map(|(path, _)| path)
+            .cloned()
+            .collect::<Vec<_>>();
+        let added: Vec<_> = discover_paths(&self.root)
+            .iter()
+            .filter(|(path, _)| !&self.path2meta.contains_key(*path))
+            .map(|(path, _)| path)
+            .cloned()
+            .collect();
+        log::debug!(
+            "{} absent, {} updated, {} added",
+            absend.len(),
+            updated.len(),
+            added.len()
+        );
+        let deleted = absend
+            .iter()
+            .cloned()
+            .cloned()
+            .collect::<Vec<_>>();
+        Difference {
+            updated,
+            deleted,
+            added,
+        }
+    }
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
         self.path2meta.len()
@@ -34,7 +92,7 @@ impl ResourceIndex {
         log::info!("Creating the index from scratch");
 
         let paths = discover_paths(root_path.as_ref().to_owned());
-        let metadata = scan_metadata(paths);
+        let metadata = scan_metadata(&paths);
 
         let mut index = ResourceIndex {
             path2meta: HashMap::new(),
@@ -73,7 +131,8 @@ impl ResourceIndex {
             .collect();
 
         let created_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
-            .iter()
+            .clone()
+            .into_iter()
             .filter_map(|(path, entry)| {
                 if !preserved_paths.contains(path.as_canonical_path()) {
                     Some((path.clone(), entry.clone()))
@@ -111,14 +170,16 @@ impl ResourceIndex {
                                 );
                                 false
                             }
-                            Ok(curr_modified) => curr_modified > prev_modified,
+                            Ok(curr_modified) => {
+                                curr_modified > SystemTime::from(prev_modified)
+                            }
                         },
                     }
                 }
             })
             .collect();
 
-        let mut deleted: HashSet<ResourceId> = HashSet::new();
+        let mut deleted = HashMap::new();
 
         // treating deleted and updated paths as deletions
         prev_paths
@@ -133,7 +194,7 @@ impl ResourceIndex {
                     } else {
                         log::debug!("Removing {:?} from index", meta.id);
                         self.ids.remove(&meta.id);
-                        deleted.insert(meta.id);
+                        deleted.insert(path, meta);
                     }
                 } else {
                     log::warn!("Path {} was not known", path.display());
@@ -141,17 +202,17 @@ impl ResourceIndex {
             });
 
         let added: HashMap<CanonicalPathBuf, ResourceMeta> =
-            scan_metadata(updated_paths)
+            scan_metadata(&updated_paths)
                 .into_iter()
                 .chain({
                     log::info!("The same for new paths");
-                    scan_metadata(created_paths).into_iter()
+                    scan_metadata(&created_paths).into_iter()
                 })
                 .filter(|(_, meta)| !self.ids.contains(&meta.id))
                 .collect();
 
         for (path, meta) in added.iter() {
-            if deleted.contains(&meta.id) {
+            if deleted.contains_key(path) {
                 // emitting the resource as both deleted and added
                 // (renaming a duplicate might remain undetected)
                 log::info!(
@@ -213,7 +274,7 @@ fn discover_paths<P: AsRef<Path>>(
 }
 
 fn scan_metadata(
-    entries: HashMap<CanonicalPathBuf, DirEntry>,
+    entries: &HashMap<CanonicalPathBuf, DirEntry>,
 ) -> HashMap<CanonicalPathBuf, ResourceMeta> {
     log::info!("Scanning metadata");
 
@@ -222,7 +283,7 @@ fn scan_metadata(
         .filter_map(|(path, entry)| {
             log::trace!("\n\t{:?}\n\t\t{:?}", path, entry);
 
-            let result = ResourceMeta::scan(path.clone(), entry);
+            let result = ResourceMeta::scan(path, entry);
             match result {
                 Err(msg) => {
                     log::error!(
@@ -466,13 +527,14 @@ mod tests {
 
             let mut file_path = path.clone();
             file_path.push(FILE_NAME_1);
-            std::fs::remove_file(file_path)
+            let updated_path =
+                CanonicalPathBuf::new(file_path.clone()).unwrap();
+            std::fs::remove_file(&file_path)
                 .expect("Should remove file successfully");
-
             let update = actual
                 .update()
                 .expect("Should update index successfully");
-
+            println!("{:?}", update);
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2meta.len(), 0);
             assert_eq!(actual.ids.len(), 0);
@@ -481,10 +543,7 @@ mod tests {
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 0);
 
-            assert!(update.deleted.contains(&ResourceId {
-                file_size: FILE_SIZE_1,
-                crc32: CRC32_1
-            }))
+            assert!(update.deleted.contains_key(&updated_path))
         })
     }
 

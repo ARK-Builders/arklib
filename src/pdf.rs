@@ -13,7 +13,7 @@ pub enum PDFQuality {
     Medium,
     Low,
 }
-fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
+pub fn initialize_pdfium() -> Box<dyn PdfiumLibraryBindings> {
     let out_path = env!("OUT_DIR");
     let pdfium_lib_path =
         PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
@@ -65,7 +65,7 @@ fn test_multi_pdf_generate() {
         let pdf_reader = File::open("tests/test.pdf").unwrap();
 
         println!("Rendering {}", &i);
-        let img = render_preview_page(pdf_reader, PDFQuality::High);
+        let img = render_preview_page(pdf_reader, PDFQuality::Medium);
 
         img.save(tmp_path.join(format!("test{}.png", &i)))
             .expect("cannot save image");
