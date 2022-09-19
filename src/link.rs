@@ -342,7 +342,7 @@ impl From<PathBuf> for Link {
 fn test_create_link_file() {
     use tempdir::TempDir;
     let dir = TempDir::new("arklib_test").unwrap();
-    let tmp_path = Path::new("tmp");
+    let tmp_path = dir.path();
     println!("temp path: {}", tmp_path.display());
     let url = Url::parse("https://example.com/").unwrap();
     let mut link = Link::new(String::from("title"), String::from("desc"), url);
