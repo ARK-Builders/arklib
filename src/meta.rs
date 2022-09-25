@@ -3,12 +3,8 @@ use crate::id::ResourceId;
 use anyhow::Error;
 use canonical_path::CanonicalPathBuf;
 use chrono::{DateTime, Utc};
-use thiserror::Error;
 
-use std::{
-    convert::TryFrom,
-    ffi::{OsStr, OsString},
-};
+use std::ffi::{OsStr, OsString};
 use strum::{Display, EnumCount, EnumString};
 use walkdir::DirEntry;
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
@@ -40,7 +36,7 @@ impl ResourceMeta {
         let extension = convert_str(path.extension());
         let modified = metadata.modified()?.into();
 
-        let kind = Some(ResourceKind::try_from(path.clone())?);
+        let kind = Some(ResourceKind::from(path.clone()));
 
         let meta = ResourceMeta {
             id,
@@ -74,18 +70,11 @@ pub enum ResourceKind {
 
     PlainText,
     Archive,
+    Unrecognized,
 }
 
-#[derive(Error, Debug)]
-pub enum ResourceKindError {
-    #[error("unrecognized format detected")]
-    UnrecognizedFormat,
-}
-
-// Currently all unrecognized/unsupported format will be parsed to PlainText
-impl TryFrom<CanonicalPathBuf> for ResourceKind {
-    type Error = ResourceKindError;
-    fn try_from(path: CanonicalPathBuf) -> Result<Self, ResourceKindError> {
+impl From<CanonicalPathBuf> for ResourceKind {
+    fn from(path: CanonicalPathBuf) -> Self {
         let ext = path
             .extension()
             .unwrap_or_default()
@@ -93,11 +82,11 @@ impl TryFrom<CanonicalPathBuf> for ResourceKind {
             .unwrap_or_default();
 
         if ext == "link" {
-            return Ok(ResourceKind::Link {
+            return ResourceKind::Link {
                 title: None,
                 description: None,
                 url: None,
-            });
+            };
         }
         let accepted_text = ["txt"];
         let accepted_doc = ["pdf", "doc", "docx", "odt", "ods", "md"];
@@ -107,25 +96,25 @@ impl TryFrom<CanonicalPathBuf> for ResourceKind {
             "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "ts", "mpg",
         ];
         if accepted_ar.contains(&ext) {
-            return Ok(ResourceKind::Archive);
+            return ResourceKind::Archive;
         };
         if accepted_img.contains(&ext) {
-            return Ok(ResourceKind::Image);
+            return ResourceKind::Image;
         }
         if accepted_doc.contains(&ext) {
-            return Ok(ResourceKind::Document { pages: None });
+            return ResourceKind::Document { pages: None };
         }
         if accepted_video.contains(&ext) {
-            return Ok(ResourceKind::Video {
+            return ResourceKind::Video {
                 height: None,
                 width: None,
                 duration: None,
-            });
+            };
         }
         if accepted_text.contains(&ext) {
-            return Ok(ResourceKind::PlainText);
+            return ResourceKind::PlainText;
         }
-        Err(ResourceKindError::UnrecognizedFormat)
+        ResourceKind::Unrecognized
     }
 }
 
