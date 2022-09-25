@@ -3,8 +3,12 @@ use crate::id::ResourceId;
 use anyhow::Error;
 use canonical_path::CanonicalPathBuf;
 use chrono::{DateTime, Utc};
+use thiserror::Error;
 
-use std::ffi::{OsStr, OsString};
+use std::{
+    convert::TryFrom,
+    ffi::{OsStr, OsString},
+};
 use strum::{Display, EnumCount, EnumString};
 use walkdir::DirEntry;
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
@@ -36,7 +40,7 @@ impl ResourceMeta {
         let extension = convert_str(path.extension());
         let modified = metadata.modified()?.into();
 
-        let kind = Some(ResourceKind::from(path.clone()));
+        let kind = Some(ResourceKind::try_from(path.clone())?);
 
         let meta = ResourceMeta {
             id,
@@ -60,7 +64,7 @@ pub enum ResourceKind {
         duration: Option<i64>,
     },
     Document {
-        pages: Option<i64>,
+        pages: Option<i32>,
     },
     Link {
         title: Option<String>,
@@ -72,9 +76,16 @@ pub enum ResourceKind {
     Archive,
 }
 
+#[derive(Error, Debug)]
+pub enum ResourceKindError {
+    #[error("unrecognized format detected")]
+    UnrecognizedFormat,
+}
+
 // Currently all unrecognized/unsupported format will be parsed to PlainText
-impl From<CanonicalPathBuf> for ResourceKind {
-    fn from(path: CanonicalPathBuf) -> Self {
+impl TryFrom<CanonicalPathBuf> for ResourceKind {
+    type Error = ResourceKindError;
+    fn try_from(path: CanonicalPathBuf) -> Result<Self, ResourceKindError> {
         let ext = path
             .extension()
             .unwrap_or_default()
@@ -82,13 +93,13 @@ impl From<CanonicalPathBuf> for ResourceKind {
             .unwrap_or_default();
 
         if ext == "link" {
-            return ResourceKind::Link {
+            return Ok(ResourceKind::Link {
                 title: None,
                 description: None,
                 url: None,
-            };
+            });
         }
-
+        let accepted_text = ["txt"];
         let accepted_doc = ["pdf", "doc", "docx", "odt", "ods", "md"];
         let accepted_img = ["jpg", "jpeg", "png", "svg", "gif"];
         let accepted_ar = ["zip", "7z", "rar", "tar.gz", "tar.xz"];
@@ -96,23 +107,25 @@ impl From<CanonicalPathBuf> for ResourceKind {
             "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "ts", "mpg",
         ];
         if accepted_ar.contains(&ext) {
-            return ResourceKind::Archive;
+            return Ok(ResourceKind::Archive);
         };
         if accepted_img.contains(&ext) {
-            return ResourceKind::Image;
+            return Ok(ResourceKind::Image);
         }
         if accepted_doc.contains(&ext) {
-            return ResourceKind::Document { pages: None };
+            return Ok(ResourceKind::Document { pages: None });
         }
         if accepted_video.contains(&ext) {
-            return ResourceKind::Video {
+            return Ok(ResourceKind::Video {
                 height: None,
                 width: None,
                 duration: None,
-            };
+            });
         }
-
-        ResourceKind::PlainText
+        if accepted_text.contains(&ext) {
+            return Ok(ResourceKind::PlainText);
+        }
+        Err(ResourceKindError::UnrecognizedFormat)
     }
 }
 

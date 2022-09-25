@@ -37,12 +37,27 @@ impl ResourceIndex {
         root_path: P,
         resources: HashMap<CanonicalPathBuf, ResourceMeta>,
     ) -> Self {
-        Self {
-            path2meta: resources,
+        // TODO Return Result
+        log::info!("creating resource index from giving resources");
+        let root = CanonicalPathBuf::canonicalize(root_path).unwrap();
+
+        let mut index = Self {
+            path2meta: HashMap::new(),
             collisions: HashMap::new(),
             ids: HashSet::new(),
-            root: root_path.as_ref().to_path_buf(),
+            root: root.into_path_buf(),
+        };
+        for (path, meta) in resources {
+            add_meta(
+                path,
+                meta,
+                &mut index.path2meta,
+                &mut index.collisions,
+                &mut index.ids,
+            );
         }
+        log::info!("Index created from giving resources.");
+        index
     }
     pub fn calc_diff(&self) -> Difference {
         let (present, absend): (Vec<_>, Vec<_>) = self
