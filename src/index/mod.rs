@@ -1,27 +1,40 @@
-use std::collections::{HashMap, HashSet};
+pub mod cache;
 use std::path::{Path, PathBuf};
+
 use std::time::SystemTime;
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use canonical_path::CanonicalPathBuf;
 use walkdir::{DirEntry, WalkDir};
 
 use anyhow::Error;
 use log;
+use nom::{sequence::preceded, IResult};
 
 use crate::id::ResourceId;
 use crate::meta::ResourceMeta;
 
+pub const INDEX_CACHE_DIR: &'static str = ".ark/index/cache";
+
+pub const INDEX_DIR: &'static str = ".ark/index";
+
 #[derive(Debug)]
 pub struct ResourceIndex {
+    // the data
     pub path2meta: HashMap<CanonicalPathBuf, ResourceMeta>,
+    // collisions record to avoid hash collisions
     pub collisions: HashMap<ResourceId, usize>,
+    // id records for hash collisions check
     ids: HashSet<ResourceId>,
     root: PathBuf,
 }
-
+// Since we treat outdated index as deleted index and updated index as added index,
+// it's no need to keep a updated index record.
 #[derive(Debug)]
 pub struct IndexUpdate {
-    // pub updated: HashMap<CanonicalPathBuf, ResourceMeta>,
     pub deleted: HashMap<CanonicalPathBuf, ResourceMeta>,
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
 }
@@ -47,6 +60,7 @@ impl ResourceIndex {
             ids: HashSet::new(),
             root: root.into_path_buf(),
         };
+        // Avoid hash collision.
         for (path, meta) in resources {
             add_meta(
                 path,
@@ -102,7 +116,7 @@ impl ResourceIndex {
         //the actual size is lower in presence of collisions
         self.path2meta.len()
     }
-
+    /// Build index from scratch.
     pub fn build<P: AsRef<Path>>(root_path: P) -> Result<Self, Error> {
         log::info!("Creating the index from scratch");
 
@@ -116,6 +130,7 @@ impl ResourceIndex {
             root: root_path.as_ref().to_owned(),
         };
 
+        // avoid hash collision
         for (path, meta) in metadata {
             add_meta(
                 path,
@@ -126,10 +141,10 @@ impl ResourceIndex {
             );
         }
 
-        log::info!("Index built");
+        log::info!("index built");
         return Ok(index);
     }
-
+    /// update index in memory
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
         log::info!("Updating the index");
         log::trace!("Known paths:\n{:?}", self.path2meta.keys());
@@ -248,6 +263,18 @@ impl ResourceIndex {
 
         Ok(IndexUpdate { deleted, added })
     }
+
+    pub fn remove(&self) {}
+    pub fn list_resources(&self) {}
+
+    pub fn get_path(&self) {}
+
+    pub fn get_meta(&self) {}
+
+    pub fn update_resource(&self) {}
+    // presist cache into fs
+    pub fn cache(&self) {}
+    pub fn list_ids(&self) {}
 }
 
 fn discover_paths<P: AsRef<Path>>(
@@ -314,6 +341,7 @@ fn scan_metadata(
         .collect()
 }
 
+// safely add meta by checking id to avoid hash collision.
 fn add_meta(
     path: CanonicalPathBuf,
     meta: ResourceMeta,

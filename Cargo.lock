@@ -62,6 +62,7 @@ dependencies = [
  "log",
  "mediatype",
  "mime_guess",
+ "nom",
  "pdfium-render",
  "reqwest",
  "scraper",
