@@ -1,5 +1,8 @@
 pub mod cache;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use std::time::SystemTime;
 use std::{
@@ -17,7 +20,7 @@ use nom::{sequence::preceded, IResult};
 use crate::id::ResourceId;
 use crate::meta::ResourceMeta;
 
-pub const INDEX_CACHE_DIR: &'static str = ".ark/index/cache";
+pub const INDEX_CACHE_DIR: &'static str = ".ark/index";
 
 pub const INDEX_DIR: &'static str = ".ark/index";
 
@@ -29,6 +32,7 @@ pub struct ResourceIndex {
     pub collisions: HashMap<ResourceId, usize>,
     // id records for hash collisions check
     ids: HashSet<ResourceId>,
+    // the root path
     root: PathBuf,
 }
 // Since we treat outdated index as deleted index and updated index as added index,
@@ -39,13 +43,14 @@ pub struct IndexUpdate {
     pub added: HashMap<CanonicalPathBuf, ResourceMeta>,
 }
 
-pub struct Difference {
-    pub updated: Vec<CanonicalPathBuf>,
-    pub deleted: Vec<CanonicalPathBuf>,
-    pub added: Vec<CanonicalPathBuf>,
-}
+// pub struct Difference {
+//     pub updated: Vec<CanonicalPathBuf>,
+//     pub deleted: Vec<CanonicalPathBuf>,
+//     pub added: Vec<CanonicalPathBuf>,
+// }
 
 impl ResourceIndex {
+    /// initial index from given path,
     pub fn from_resources<P: AsRef<Path>>(
         root_path: P,
         resources: HashMap<CanonicalPathBuf, ResourceMeta>,
@@ -73,47 +78,49 @@ impl ResourceIndex {
         log::info!("Index created from giving resources.");
         index
     }
-    pub fn calc_diff(&self) -> Difference {
-        let (present, absend): (Vec<_>, Vec<_>) = self
-            .path2meta
-            .keys()
-            .partition(|path| path.exists());
+    // pub fn calc_diff(&self) -> Difference {
+    //     let (present, absend): (Vec<_>, Vec<_>) = self
+    //         .path2meta
+    //         .keys()
+    //         .partition(|path| path.exists());
 
-        let updated = present
-            .iter()
-            .map(|&it| (it, &self.path2meta[it]))
-            .filter(|(path, meta)| {
-                path.metadata().unwrap().modified().unwrap()
-                    > Into::<SystemTime>::into(meta.modified)
-            })
-            .map(|(path, _)| path)
-            .cloned()
-            .collect::<Vec<_>>();
-        let added: Vec<_> = discover_paths(&self.root)
-            .iter()
-            .filter(|(path, _)| !&self.path2meta.contains_key(*path))
-            .map(|(path, _)| path)
-            .cloned()
-            .collect();
-        log::debug!(
-            "{} absent, {} updated, {} added",
-            absend.len(),
-            updated.len(),
-            added.len()
-        );
-        let deleted = absend
-            .iter()
-            .cloned()
-            .cloned()
-            .collect::<Vec<_>>();
-        Difference {
-            updated,
-            deleted,
-            added,
-        }
-    }
+    //     let updated = present
+    //         .iter()
+    //         .map(|&it| (it, &self.path2meta[it]))
+    //         .filter(|(path, meta)| {
+    //             path.metadata().unwrap().modified().unwrap()
+    //                 > Into::<SystemTime>::into(meta.modified)
+    //         })
+    //         .map(|(path, _)| path)
+    //         .cloned()
+    //         .collect::<Vec<_>>();
+    //     let added: Vec<_> = discover_paths(&self.root)
+    //         .iter()
+    //         .filter(|(path, _)| !&self.path2meta.contains_key(*path))
+    //         .map(|(path, _)| path)
+    //         .cloned()
+    //         .collect();
+    //     log::debug!(
+    //         "{} absent, {} updated, {} added",
+    //         absend.len(),
+    //         updated.len(),
+    //         added.len()
+    //     );
+    //     let deleted = absend
+    //         .iter()
+    //         .cloned()
+    //         .cloned()
+    //         .collect::<Vec<_>>();
+    //     Difference {
+    //         updated,
+    //         deleted,
+    //         added,
+    //     }
+    // }
+    /// Get the size of a index.
+    ///
+    /// NOTE: the actual size is lower in presence of collisions
     pub fn size(&self) -> usize {
-        //the actual size is lower in presence of collisions
         self.path2meta.len()
     }
     /// Build index from scratch.
@@ -144,7 +151,7 @@ impl ResourceIndex {
         log::info!("index built");
         return Ok(index);
     }
-    /// update index in memory
+    /// re-discovery the root path and update index in memory
     pub fn update(&mut self) -> Result<IndexUpdate, Error> {
         log::info!("Updating the index");
         log::trace!("Known paths:\n{:?}", self.path2meta.keys());
@@ -264,17 +271,89 @@ impl ResourceIndex {
         Ok(IndexUpdate { deleted, added })
     }
 
-    pub fn remove(&self) {}
-    pub fn list_resources(&self) {}
+    pub fn remove(&mut self, id: i64) -> Option<CanonicalPathBuf> {
+        log::info!("removing id: {id}");
+        let iter = self.path2meta.clone().into_iter();
+        let mut pair_iter = iter.filter(|(_, meta)| meta.id.crc32 == id as u32);
+        let val = pair_iter.next();
+        log::info!("Removed: {:#?}", val);
+        match val {
+            Some((path, _)) => self
+                .path2meta
+                .remove(path.as_canonical_path())
+                .map(|_| path),
+            None => None,
+        }
+    }
+    pub fn list_resources(
+        &self,
+        prefix: Option<String>,
+    ) -> HashMap<CanonicalPathBuf, ResourceMeta> {
+        match prefix {
+            Some(prefix) => self
+                .path2meta
+                .iter()
+                .filter(|(path, _)| path.starts_with(prefix.clone()))
+                .map(|(a, b)| (a.clone(), b.clone()))
+                .collect(),
+            None => self.path2meta.clone(),
+        }
+    }
 
-    pub fn get_path(&self) {}
+    pub fn get_path(&self, id: i64) -> Option<CanonicalPathBuf> {
+        self.path2meta
+            .iter()
+            .find(|&x| x.1.id.crc32 as i64 == id)
+            .map(|(p, _)| p.clone())
+    }
 
-    pub fn get_meta(&self) {}
+    pub fn get_meta(&self, id: i64) -> Option<ResourceMeta> {
+        self.path2meta
+            .iter()
+            .find(|&x| x.1.id.crc32 as i64 == id)
+            .map(|(_, m)| m.clone())
+    }
 
-    pub fn update_resource(&self) {}
+    pub fn update_resource(
+        &mut self,
+        path: CanonicalPathBuf,
+        new_resource: ResourceMeta,
+    ) {
+        let new_res_id_crc32 = new_resource.id.crc32;
+        match self.path2meta.insert(path, new_resource) {
+            Some(v) => {
+                log::info!("updated resource: {}", v.id.crc32);
+            }
+            None => {
+                log::warn!(
+                    "resource not found, added the resource: {}",
+                    new_res_id_crc32
+                );
+            }
+        }
+    }
+    /// Check if an id is in the index
+    pub fn contains(&self, id: i64) -> bool {
+        self.ids
+            .iter()
+            .find(|x| x.crc32 == id as u32)
+            .is_some()
+    }
     // presist cache into fs
     pub fn cache(&self) {}
-    pub fn list_ids(&self) {}
+    pub fn list_ids(&self) -> HashSet<ResourceId> {
+        self.ids.clone()
+    }
+}
+
+impl TryFrom<PathBuf> for ResourceIndex {
+    type Error = Error;
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        let root = CanonicalPathBuf::canonicalize(path).unwrap();
+        let index = fs::File::open(root.as_path())?;
+
+        todo!()
+    }
 }
 
 fn discover_paths<P: AsRef<Path>>(
