@@ -10,7 +10,6 @@ use pdfium_render::prelude::*;
 
 static PDFIUM: OnceCell<Pdfium> = OnceCell::new(); // static initializers must impl Sync + Send
 
-
 pub enum PDFQuality {
     High,
     Medium,
@@ -19,7 +18,8 @@ pub enum PDFQuality {
 
 fn initialize_pdfium() {
     let out_path = env!("OUT_DIR");
-    let pdfium_lib_path = PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
+    let pdfium_lib_path =
+        PathBuf::from(&out_path).join(Pdfium::pdfium_platform_library_name());
     let bindings = Pdfium::bind_to_library(
         #[cfg(target_os = "android")]
         Pdfium::pdfium_platform_library_name_at_path("./"),
@@ -28,7 +28,8 @@ fn initialize_pdfium() {
     )
     .or_else(|_| Pdfium::bind_to_system_library())
     .unwrap();
-    PDFIUM.set(Pdfium::new(bindings)); // Instead of returning the bindings, we cache them in the static initializer
+    PDFIUM.set(Pdfium::new(bindings)); // Instead of returning the bindings, we
+                                       // cache them in the static initializer
 }
 
 pub fn render_preview_page<R>(data: R, quailty: PDFQuality) -> DynamicImage
@@ -42,12 +43,12 @@ where
         PDFQuality::Low => render_cfg.thumbnail(50),
     }
     .rotate_if_landscape(PdfBitmapRotation::Degrees90, true);
-    
-    
+
     if PDFIUM.get().is_none() {
         initialize_pdfium();
     }
-    PDFIUM.get()
+    PDFIUM
+        .get()
         .unwrap()
         .load_pdf_from_reader(data, None)
         .unwrap()
@@ -57,7 +58,6 @@ where
         .render_with_config(&render_cfg)
         .unwrap()
         .as_image()
-
 }
 
 #[test]
