@@ -1,10 +1,13 @@
 mod atomic;
-use atomic::AtomicFile;
-use serde::{Serialize, de::DeserializeOwned};
-use std::io::{Result, Read, Write};
+use serde::{de::DeserializeOwned, Serialize};
+use std::io::{Read, Result, Write};
 
+pub use atomic::AtomicFile;
 
-pub fn modifiy(x: &AtomicFile, mut op: impl FnMut(&[u8]) -> Vec<u8>) -> Result<()> {
+pub fn modifiy(
+    x: &AtomicFile,
+    mut op: impl FnMut(&[u8]) -> Vec<u8>,
+) -> Result<()> {
     let mut buf = vec![];
     loop {
         let latest = x.load()?;
@@ -18,7 +21,9 @@ pub fn modifiy(x: &AtomicFile, mut op: impl FnMut(&[u8]) -> Vec<u8>) -> Result<(
         (&tmp).flush()?;
         match x.compare_and_swap(&latest, tmp) {
             Ok(()) => return Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                continue
+            }
             Err(err) => return Err(err),
         }
     }
@@ -42,8 +47,49 @@ pub fn modify_json<T: Serialize + DeserializeOwned>(
         drop(w);
         match x.compare_and_swap(&latest, tmp) {
             Ok(()) => return Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                continue
+            }
             Err(err) => return Err(err),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempdir::TempDir;
+    #[test]
+    fn failed_to_write_simulteanously() {
+        let dir = TempDir::new("writing_test").unwrap();
+        let root = dir.path();
+        let shared_file = std::sync::Arc::new(AtomicFile::new(&root).unwrap());
+        let mut handles = Vec::with_capacity(10);
+        for i in 0..5 {
+            let file = shared_file.clone();
+            let handle = std::thread::spawn(move || {
+                let temp = file.make_temp().unwrap();
+                let current = file.load().unwrap();
+                // May need larger content to be sure
+                let content = format!("Content from thread {i}!");
+                (&temp).write(&content.as_bytes()).unwrap();
+                (&temp).flush().unwrap();
+                file.compare_and_swap(&current, temp)
+            });
+            handles.push(handle);
+        }
+        let results = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect::<Vec<_>>();
+        // Ensure only one thread has succed to write
+        let success = results.iter().fold(0, |mut acc, r| {
+            if r.is_ok() {
+                acc += 1;
+            }
+            acc
+        });
+        assert!(success == 1);
     }
 }

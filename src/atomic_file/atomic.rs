@@ -1,8 +1,8 @@
 use std::fs::{self, File};
-use std::io::Result;
-use std::path::{Path, PathBuf};
+use std::io::{Error, ErrorKind, Read, Result};
 #[cfg(target_os = "unix")]
 use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 
 pub struct TmpFile {
     file: File,
@@ -58,6 +58,18 @@ impl ReadOnlyFile {
             Ok(Some(File::open(&self.path)?))
         } else {
             Ok(None)
+        }
+    }
+
+    pub fn read_to_string(&self) -> Result<String> {
+        match self.open() {
+            Ok(None) => Err(Error::new(ErrorKind::NotFound, "File not found")),
+            Ok(Some(mut file)) => {
+                let mut buff = String::new();
+                file.read_to_string(&mut buff)?;
+                Ok(buff)
+            }
+            Err(e) => Err(e),
         }
     }
 }
@@ -150,7 +162,7 @@ impl AtomicFile {
             if new.path.metadata()?.nlink() != 2 {
                 Err(err)?;
             }
-            #[cfg(not(target_os= "unix"))]
+            #[cfg(not(target_os = "unix"))]
             Err(err)?;
         }
         Ok(())
