@@ -73,8 +73,7 @@ mod tests {
                 let current = file.load().unwrap();
                 // May need larger content to be sure
                 let content = format!("Content from thread {i}!");
-                (&temp).write(&content.as_bytes()).unwrap();
-                (&temp).flush().unwrap();
+                (&temp).write_all(&content.as_bytes()).unwrap();
                 file.compare_and_swap(&current, temp)
             });
             handles.push(handle);
