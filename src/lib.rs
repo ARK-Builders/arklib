@@ -6,7 +6,7 @@ pub use errors::{ArklibError, Result};
 pub mod id;
 pub mod link;
 pub mod pdf;
-
+mod atomic_file;
 pub mod index;
 mod meta;
 
