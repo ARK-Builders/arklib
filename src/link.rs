@@ -1,6 +1,10 @@
+use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
-use crate::meta::{load_meta_bytes, store_meta};
-use crate::AtomicFile;
+use crate::meta::load_meta_bytes;
+use crate::{ArklibError, Result,
+    AtomicFile, LINK_STORAGE_FOLDER, METADATA_STORAGE_FOLDER,
+    PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER, ARK_FOLDER,
+};
 use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
@@ -11,9 +15,9 @@ use std::str::{self, FromStr};
 use std::{io::Write, path::PathBuf};
 use url::Url;
 
-use crate::id::ResourceId;
-use crate::meta::{load_meta_bytes, store_meta};
-use crate::{ArklibError, Result, ARK_FOLDER, PREVIEWS_STORAGE_FOLDER};
+
+use crate::meta::store_meta;
+
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
@@ -51,56 +55,78 @@ impl Link {
         Ok(Self { url, meta })
     }
 
-    /// Write zipped file to path
-    pub async fn write_to_path<P: AsRef<Path>>(
-        &mut self,
+    pub async fn save<P: AsRef<Path>>(
+        &self,
         root: P,
-        path: P,
-        save_preview: bool,
+        with_preview: bool,
     ) -> Result<()> {
         let id = self.id()?;
-        let link_file = AtomicFile::new(path.as_ref())?;
-        let url = self.url.as_str().as_bytes();
+        let id = id.to_string();
+        let folder = root
+            .as_ref()
+            .join(STORAGES_FOLDER)
+            .join(LINK_STORAGE_FOLDER)
+            .join(&id);
+        let link_file = AtomicFile::new(folder)?;
         let tmp = link_file.make_temp()?;
-        (&tmp).write_all(url)?;
+        (&tmp).write_all(self.url.as_str().as_bytes())?;
         let current_link = link_file.load()?;
         link_file.compare_and_swap(&current_link, tmp)?;
-        if save_preview {
-            let preview_data = Link::get_preview(self.url.clone())
-                .await
-                .unwrap_or_default();
-            let image_data = preview_data
-                .fetch_image()
-                .await
-                .unwrap_or_default();
-            self.save_preview(root.as_ref(), image_data, id)
-                .await?;
+
+        //User defined properties
+        let prop_folder = root
+            .as_ref()
+            .join(STORAGES_FOLDER)
+            .join(PROPERTIES_STORAGE_FOLDER)
+            .join(&id);
+        let prop_file = AtomicFile::new(prop_folder)?;
+        modify_json(&prop_file, |data: &mut Option<Metadata>| {
+            let metadata = self.meta.clone();
+            match data {
+                Some(data) => {
+                    // Hack currently overwrites
+                    *data = metadata;
+                }
+                None => *data = Some(metadata),
+            }
+        })?;
+
+        // Generated data
+        let url = (&self.url).to_string();
+        if let Ok(data) = Link::get_preview(url).await {
+            let graph_folder = Path::new(STORAGES_FOLDER)
+                .join(METADATA_STORAGE_FOLDER)
+                .join(&id);
+            let file = AtomicFile::new(graph_folder)?;
+            modify_json(&file, |file_data: &mut Option<OpenGraph>| {
+                let graph = data.clone();
+                match file_data {
+                    Some(file_data) => {
+                        // Hack currently overwrite
+                        *file_data = graph;
+                    }
+                    None => *file_data = Some(graph),
+                }
+            })?;
+            if with_preview {
+                if let Some(preview_data) = data.fetch_image().await {
+                    self.save_preview(root, preview_data)?;
+                }
+            }
         }
-        println!("Debug meta: {:?}", &self.meta);
-        store_meta::<Metadata, _>(root, id, (&self.meta).clone())
+        Ok(())
     }
 
-    /// Synchronized version of Write zipped file to path
-    pub fn write_to_path_sync<P: AsRef<Path>>(
-        &mut self,
-        root: P,
-        path: P,
-        save_preview: bool,
-    ) -> Result<()> {
-        let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(self.write_to_path(root, path, save_preview))
-    }
-
-    pub async fn save_preview<P: AsRef<Path>>(
-        &mut self,
+    fn save_preview<P: AsRef<Path>>(
+        &self,
         root: P,
         image_data: Vec<u8>,
-        id: ResourceId,
+        id: &ResourceId,
     ) -> Result<()> {
         let path = root
             .as_ref()
-            .join(STORAGES_FOLDER)
-            .join(PREVIEWS_PATH)
+            .join(ARK_FOLDER)
+            .join(PREVIEWS_STORAGE_FOLDER)
             .join(id.to_string());
         let file = AtomicFile::new(path)?;
         let tmp = file.make_temp()?;
@@ -196,7 +222,7 @@ fn select_title(html: &Html) -> Option<String> {
 
     None
 }
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct OpenGraph {
     /// Represents the "og:title" OpenGraph meta tag.
     ///
@@ -283,21 +309,20 @@ impl OpenGraphTag {
     }
 }
 
-#[test]
-fn test_create_link_file() {
+#[tokio::test]
+async fn test_create_link_file() {
     use tempdir::TempDir;
     let dir = TempDir::new("arklib_test").unwrap();
     let root = dir.path();
     println!("temporary root: {}", root.display());
     let url = Url::parse("https://example.com/").unwrap();
-    let mut link =
+    let link =
         Link::new(url, String::from("title"), Some(String::from("desc")));
 
     let path = root.join("test.link");
 
     for save_preview in [false, true] {
-        link.write_to_path_sync(root, path.as_path(), save_preview)
-            .unwrap();
+        link.save(root, save_preview).await.unwrap();
         let file = AtomicFile::new(&path).unwrap();
         let current = file.load().unwrap();
         let current_bytes = current.read_to_string().unwrap();
