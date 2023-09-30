@@ -115,12 +115,12 @@ impl Link {
         })?;
 
         // Generated data
-        let url = (&self.url).to_string();
-        if let Ok(data) = Link::get_preview(url).await {
+        if let Ok(data) = self.get_preview().await {
             let graph_folder = base_dir.join(METADATA_STORAGE_FOLDER).join(&id);
             let file = AtomicFile::new(graph_folder)?;
             modify_json(&file, |file_data: &mut Option<OpenGraph>| {
                 let graph = data.clone();
+                println!("Trying to save: {with_preview} with {graph:?}");
                 match file_data {
                     Some(file_data) => {
                         // Hack currently overwrite
@@ -158,20 +158,14 @@ impl Link {
     }
 
     /// Get metadata of the link (synced).
-    pub fn get_preview_synced<S>(url: S) -> Result<OpenGraph>
-    where
-        S: Into<String>,
-    {
+    pub fn get_preview_synced(&self) -> Result<OpenGraph> {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-        return runtime.block_on(Link::get_preview(url));
+        return runtime.block_on(self.get_preview());
     }
 
     /// Get metadata of the link.
-    pub async fn get_preview<S>(url: S) -> Result<OpenGraph>
-    where
-        S: Into<String>,
-    {
+    pub async fn get_preview(&self) -> Result<OpenGraph> {
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(
             "User-Agent",
@@ -182,12 +176,8 @@ impl Link {
         let client = reqwest::Client::builder()
             .default_headers(header)
             .build()?;
-        let scraper = client
-            .get(url.into())
-            .send()
-            .await?
-            .text()
-            .await?;
+        let url = self.url.to_string();
+        let scraper = client.get(url).send().await?.text().await?;
         let html = Html::parse_document(&scraper.as_str());
         let title =
             select_og(&html, OpenGraphTag::Title).or(select_title(&html));
@@ -202,7 +192,7 @@ impl Link {
         })
     }
 
-    fn load_url(path: PathBuf) -> Result<Url, Error> {
+    fn load_url(path: PathBuf) -> Result<Url> {
         let file = AtomicFile::new(path)?;
         let read_file = file.load()?;
         let content = read_file.read_to_string()?;
@@ -337,7 +327,7 @@ async fn test_create_link_file() {
     let dir = TempDir::new("arklib_test").unwrap();
     let root = dir.path();
     println!("temporary root: {}", root.display());
-    let url = Url::parse("https://www.facebook.com/").unwrap();
+    let url = Url::parse("https://kaydee.net/blog/open-graph-image/").unwrap();
     let link =
         Link::new(url, String::from("title"), Some(String::from("desc")));
 
@@ -346,14 +336,14 @@ async fn test_create_link_file() {
         .join(LINK_STORAGE_FOLDER)
         .join(link.id().unwrap().to_string());
     let file = AtomicFile::new(&path).unwrap();
-    for save_preview in [false, false] {
+    for save_preview in [false, true] {
         link.save(root, save_preview).await.unwrap();
         let current = file.load().unwrap();
         let current_bytes = current.read_to_string().unwrap();
         let url: Url =
             Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
                 .unwrap();
-        assert_eq!(url.as_str(), "https://www.facebook.com/");
+        assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
         let link = Link::load(root.clone(), path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.meta.desc.unwrap(), "desc");
@@ -362,12 +352,12 @@ async fn test_create_link_file() {
         let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
         println!("resource: {}, {}", id.crc32, id.data_size);
 
-        if Path::new(root)
-            .join(ARK_FOLDER)
+        let path = Path::new(root)
+            .join(STORAGES_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
-            .join(id.to_string())
-            .exists()
-        {
+            .join(id.to_string());
+        println!("Path: {} exist: {}", path.display(), path.exists());
+        if path.exists() {
             assert_eq!(save_preview, true)
         } else {
             assert_eq!(save_preview, false)
