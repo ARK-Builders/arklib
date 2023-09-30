@@ -27,6 +27,9 @@ use log;
 
 pub const ARK_FOLDER: &str = ".ark";
 
+// allowed to be lost (cache)
+pub const INDEX_PATH: &str = "index";
+
 // must not be lost (user data)
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
@@ -35,6 +38,7 @@ pub const FAVORITES_FILE: &str = "favorites";
 pub const TAG_STORAGE_FILE: &str = "user/tags";
 pub const SCORE_STORAGE_FILE: &str = "user/scores";
 pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
+pub const LINK_STORAGE_FOLDER: &str = "user/links";
 
 // Generated data
 pub const INDEX_PATH: &str = "index";
