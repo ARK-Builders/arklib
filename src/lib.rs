@@ -7,8 +7,13 @@ pub mod id;
 pub mod link;
 pub mod pdf;
 mod atomic_file;
+
+pub use atomic_file::AtomicFile;
+pub mod id;
 pub mod index;
+pub mod link;
 mod meta;
+pub mod pdf;
 
 use index::ResourceIndex;
 

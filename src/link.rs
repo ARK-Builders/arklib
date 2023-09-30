@@ -1,10 +1,14 @@
+use crate::id::ResourceId;
+use crate::meta::{load_meta_bytes, store_meta};
+use crate::AtomicFile;
+use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
 use std::str::{self, FromStr};
-use std::{fs, fs::File, io::Write, path::PathBuf};
+use std::{io::Write, path::PathBuf};
 use url::Url;
 
 use crate::id::ResourceId;
@@ -40,7 +44,6 @@ impl Link {
         let p = path.as_ref().to_path_buf();
         let url = Self::load_url(p)?;
         let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
-
         let bytes = load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
         let meta: Metadata =
             serde_json::from_slice(&bytes).map_err(|_| ArklibError::Parse)?;
@@ -56,11 +59,12 @@ impl Link {
         save_preview: bool,
     ) -> Result<()> {
         let id = self.id()?;
-        store_meta::<Metadata, _>(root.as_ref(), id, &self.meta)?;
-
-        let mut link_file = File::create(path.as_ref().to_owned())?;
-        let file_data = self.url.as_str().as_bytes();
-        link_file.write(file_data)?;
+        let link_file = AtomicFile::new(path.as_ref())?;
+        let url = self.url.as_str().as_bytes();
+        let tmp = link_file.make_temp()?;
+        (&tmp).write_all(url)?;
+        let current_link = link_file.load()?;
+        link_file.compare_and_swap(&current_link, tmp)?;
         if save_preview {
             let preview_data = Link::get_preview(self.url.clone())
                 .await
@@ -72,8 +76,8 @@ impl Link {
             self.save_preview(root.as_ref(), image_data, id)
                 .await?;
         }
-
-        store_meta::<Metadata, _>(root, id, &self.meta)
+        println!("Debug meta: {:?}", &self.meta);
+        store_meta::<Metadata, _>(root, id, (&self.meta).clone())
     }
 
     /// Synchronized version of Write zipped file to path
@@ -95,15 +99,14 @@ impl Link {
     ) -> Result<()> {
         let path = root
             .as_ref()
-            .join(ARK_FOLDER)
-            .join(PREVIEWS_STORAGE_FOLDER);
-        fs::create_dir_all(path.to_owned())?;
-
-        let file = path.to_owned().join(id.to_string());
-
-        let mut file = File::create(file)?;
-        file.write(image_data.as_slice())?;
-
+            .join(STORAGES_FOLDER)
+            .join(PREVIEWS_PATH)
+            .join(id.to_string());
+        let file = AtomicFile::new(path)?;
+        let tmp = file.make_temp()?;
+        (&tmp).write_all(&image_data)?;
+        let current_preview = file.load()?;
+        file.compare_and_swap(&current_preview, tmp)?;
         Ok(())
     }
 
@@ -152,10 +155,12 @@ impl Link {
         })
     }
 
-    fn load_url(path: PathBuf) -> Result<Url> {
-        let url_raw = std::fs::read(path)?;
-        let url_str = str::from_utf8(url_raw.as_slice())?;
-        Url::from_str(url_str).map_err(|_| ArklibError::Parse)
+    fn load_url(path: PathBuf) -> Result<Url, Error> {
+        let file = AtomicFile::new(path)?;
+        let read_file = file.load()?;
+        let content = read_file.read_to_string()?;
+        let url_str = str::from_utf8(content.as_bytes())?;
+        Ok(Url::from_str(url_str)?)
     }
 }
 
@@ -293,16 +298,19 @@ fn test_create_link_file() {
     for save_preview in [false, true] {
         link.write_to_path_sync(root, path.as_path(), save_preview)
             .unwrap();
-        let link_file_bytes = std::fs::read(path.to_owned()).unwrap();
+        let file = AtomicFile::new(&path).unwrap();
+        let current = file.load().unwrap();
+        let current_bytes = current.read_to_string().unwrap();
         let url: Url =
-            Url::from_str(str::from_utf8(&link_file_bytes).unwrap()).unwrap();
+            Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
+                .unwrap();
         assert_eq!(url.as_str(), "https://example.com/");
         let link = Link::load(root.clone(), path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.meta.desc.unwrap(), "desc");
         assert_eq!(link.meta.title, "title");
 
-        let id = ResourceId::compute_bytes(link_file_bytes.as_slice()).unwrap();
+        let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
         println!("resource: {}, {}", id.crc32, id.data_size);
 
         if Path::new(root)
