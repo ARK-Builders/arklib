@@ -43,16 +43,46 @@ impl Link {
         ResourceId::compute_bytes(self.url.as_str().as_bytes())
     }
 
+    fn load_user_data<P: AsRef<Path>>(
+        root: P,
+        id: &ResourceId,
+    ) -> Result<Metadata, Error> {
+        let path = root
+            .as_ref()
+            .join(STORAGES_FOLDER)
+            .join(PROPERTIES_STORAGE_FOLDER)
+            .join(id.to_string());
+        let file = AtomicFile::new(path)?;
+        let current = file.load()?;
+        let data = current.read_to_string()?;
+        let user_meta: Metadata = serde_json::from_str(&data)?;
+        Ok(user_meta)
+    }
+
     /// Load a link with its metadata from file
     pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self> {
         let p = path.as_ref().to_path_buf();
         let url = Self::load_url(p)?;
         let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
-        let bytes = load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
-        let meta: Metadata =
-            serde_json::from_slice(&bytes).map_err(|_| ArklibError::Parse)?;
+        // Load user properties first
+        let user_meta = Self::load_user_data(&root, &id)?;
+        let mut description = user_meta.desc;
 
-        Ok(Self { url, meta })
+        // Only load metadata if description is not set
+        if description.is_none() {
+            let bytes =
+                load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
+            let graph_meta: OpenGraph = serde_json::from_slice(&bytes)?;
+            description = graph_meta.description;
+        }
+
+        Ok(Self {
+            url,
+            meta: Metadata {
+                title: user_meta.title,
+                desc: description,
+            },
+        })
     }
 
     pub async fn save<P: AsRef<Path>>(
@@ -62,23 +92,16 @@ impl Link {
     ) -> Result<()> {
         let id = self.id()?;
         let id = id.to_string();
-        let folder = root
-            .as_ref()
-            .join(STORAGES_FOLDER)
-            .join(LINK_STORAGE_FOLDER)
-            .join(&id);
-        let link_file = AtomicFile::new(folder)?;
+        let base_dir = root.as_ref().join(STORAGES_FOLDER);
+        let folder = base_dir.join(LINK_STORAGE_FOLDER).join(&id);
+        let link_file = AtomicFile::new(&folder)?;
         let tmp = link_file.make_temp()?;
         (&tmp).write_all(self.url.as_str().as_bytes())?;
         let current_link = link_file.load()?;
         link_file.compare_and_swap(&current_link, tmp)?;
 
         //User defined properties
-        let prop_folder = root
-            .as_ref()
-            .join(STORAGES_FOLDER)
-            .join(PROPERTIES_STORAGE_FOLDER)
-            .join(&id);
+        let prop_folder = base_dir.join(PROPERTIES_STORAGE_FOLDER).join(&id);
         let prop_file = AtomicFile::new(prop_folder)?;
         modify_json(&prop_file, |data: &mut Option<Metadata>| {
             let metadata = self.meta.clone();
@@ -94,9 +117,7 @@ impl Link {
         // Generated data
         let url = (&self.url).to_string();
         if let Ok(data) = Link::get_preview(url).await {
-            let graph_folder = Path::new(STORAGES_FOLDER)
-                .join(METADATA_STORAGE_FOLDER)
-                .join(&id);
+            let graph_folder = base_dir.join(METADATA_STORAGE_FOLDER).join(&id);
             let file = AtomicFile::new(graph_folder)?;
             modify_json(&file, |file_data: &mut Option<OpenGraph>| {
                 let graph = data.clone();
@@ -312,24 +333,27 @@ impl OpenGraphTag {
 #[tokio::test]
 async fn test_create_link_file() {
     use tempdir::TempDir;
+
     let dir = TempDir::new("arklib_test").unwrap();
     let root = dir.path();
     println!("temporary root: {}", root.display());
-    let url = Url::parse("https://example.com/").unwrap();
+    let url = Url::parse("https://www.facebook.com/").unwrap();
     let link =
         Link::new(url, String::from("title"), Some(String::from("desc")));
 
-    let path = root.join("test.link");
-
-    for save_preview in [false, true] {
+    let path = root
+        .join(STORAGES_FOLDER)
+        .join(LINK_STORAGE_FOLDER)
+        .join(link.id().unwrap().to_string());
+    let file = AtomicFile::new(&path).unwrap();
+    for save_preview in [false, false] {
         link.save(root, save_preview).await.unwrap();
-        let file = AtomicFile::new(&path).unwrap();
         let current = file.load().unwrap();
         let current_bytes = current.read_to_string().unwrap();
         let url: Url =
             Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
                 .unwrap();
-        assert_eq!(url.as_str(), "https://example.com/");
+        assert_eq!(url.as_str(), "https://www.facebook.com/");
         let link = Link::load(root.clone(), path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.meta.desc.unwrap(), "desc");
