@@ -21,10 +21,6 @@ use log;
 
 pub const STORAGES_FOLDER: &str = ".ark";
 
-// allowed to be lost (cache)
-pub const INDEX_PATH: &str = "index";
-pub const PREVIEWS_PATH: &str = "previews";
-
 // must not be lost (user data)
 pub const METADATA_PATH: &str = "meta";
 pub const TAGS_PATH: &str = "tags";
@@ -37,6 +33,7 @@ pub const SCORE_STORAGE_FILE: &str = "user/scores";
 pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
 
 // Generated data
+pub const INDEX_PATH: &str = "index";
 pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
 pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";

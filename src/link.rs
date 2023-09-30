@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::id::ResourceId;
 use crate::meta::{load_meta_bytes, store_meta};
-use crate::{PREVIEWS_PATH, STORAGES_FOLDER};
+use crate::{PREVIEWS_STORAGE_FOLDER, STORAGES_FOLDER};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
@@ -96,7 +96,7 @@ impl Link {
         let path = root
             .as_ref()
             .join(STORAGES_FOLDER)
-            .join(PREVIEWS_PATH);
+            .join(PREVIEWS_STORAGE_FOLDER);
         fs::create_dir_all(path.to_owned())?;
 
         let file = path.to_owned().join(id.to_string());
@@ -307,7 +307,7 @@ fn test_create_link_file() {
 
         if Path::new(root)
             .join(STORAGES_FOLDER)
-            .join(PREVIEWS_PATH)
+            .join(PREVIEWS_STORAGE_FOLDER)
             .join(id.to_string())
             .exists()
         {
