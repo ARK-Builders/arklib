@@ -28,6 +28,18 @@ pub const PREVIEWS_PATH: &str = "previews";
 // must not be lost (user data)
 pub const METADATA_PATH: &str = "meta";
 pub const TAGS_PATH: &str = "tags";
+pub const STATS_FOLDER: &str = "stats";
+pub const FAVORITES_FILE: &str = "favorites";
+
+// User-defined data
+pub const TAG_STORAGE_FILE: &str = "user/tags";
+pub const SCORE_STORAGE_FILE: &str = "user/scores";
+pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
+
+// Generated data
+pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
+pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
+pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 
