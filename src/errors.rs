@@ -32,7 +32,6 @@ impl From<Utf8Error> for ArklibError {
     }
 }
 
-
 impl From<serde_json::Error> for ArklibError {
     fn from(value: serde_json::Error) -> Self {
         Self::Parse
@@ -41,6 +40,6 @@ impl From<serde_json::Error> for ArklibError {
 
 impl From<url::ParseError> for ArklibError {
     fn from(value: url::ParseError) -> Self {
-        Self::Parse	
+        Self::Parse
     }
 }

@@ -3,17 +3,14 @@ extern crate lazy_static;
 extern crate canonical_path;
 pub mod errors;
 pub use errors::{ArklibError, Result};
+mod atomic_file;
 pub mod id;
 pub mod link;
 pub mod pdf;
-mod atomic_file;
 pub use atomic_file::AtomicFile;
 pub mod index;
 pub mod meta;
 use index::ResourceIndex;
-
-
-
 
 use std::collections::HashMap;
 use std::path::Path;
