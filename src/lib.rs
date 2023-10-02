@@ -19,11 +19,9 @@ use canonical_path::CanonicalPathBuf;
 use anyhow::Error;
 use log;
 
-pub const STORAGES_FOLDER: &str = ".ark";
+pub const ARK_FOLDER: &str = ".ark";
 
 // must not be lost (user data)
-pub const METADATA_PATH: &str = "meta";
-pub const TAGS_PATH: &str = "tags";
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
 

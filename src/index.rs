@@ -15,7 +15,7 @@ use anyhow::Error;
 use log;
 
 use crate::id::ResourceId;
-use crate::{INDEX_PATH, STORAGES_FOLDER};
+use crate::{ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -74,8 +74,7 @@ impl ResourceIndex {
         log::info!("Loading the index from file");
         let root_path: PathBuf = root_path.as_ref().to_owned();
 
-        let index_path: PathBuf =
-            root_path.join(STORAGES_FOLDER).join(INDEX_PATH);
+        let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
 
         if let Ok(file) = File::open(&index_path) {
             let mut index = ResourceIndex {
@@ -132,7 +131,7 @@ impl ResourceIndex {
         let index_path = self
             .root
             .to_owned()
-            .join(STORAGES_FOLDER)
+            .join(ARK_FOLDER)
             .join(INDEX_PATH);
 
         let ark_dir = index_path.parent().unwrap();
