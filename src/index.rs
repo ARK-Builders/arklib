@@ -14,7 +14,7 @@ use walkdir::{DirEntry, WalkDir};
 use log;
 
 use crate::id::ResourceId;
-use crate::{ARK_FOLDER, ArklibError, Result, INDEX_PATH};
+use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
@@ -376,7 +376,7 @@ impl ResourceIndex {
 
                             // the caller must have ensured that the path was updated
                             return Err(ArklibError::Collision(
-                                "Nothing to update".into(),
+                                "New content has the same id".into(),
                             ));
                         }
 
@@ -453,7 +453,7 @@ impl ResourceIndex {
                 );
             } else {
                 return Err(ArklibError::Collision(
-                    "New content has the same id.".into(),
+                    "Illegal state of collision tracker".into(),
                 ));
             }
         } else {
@@ -510,7 +510,7 @@ fn discover_paths<P: AsRef<Path>>(
 
 fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
     if metadata.is_dir() {
-        return Err(ArklibError::Path("Metadata is a directory".into()));
+        return Err(ArklibError::Path("Path is expected to be a file".into()));
     }
 
     let size = metadata.len();

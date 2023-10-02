@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::id::ResourceId;
 use crate::meta::{load_meta_bytes, store_meta};
-use crate::{ARK_FOLDER, ArklibError, Result, PREVIEWS_STORAGE_FOLDER};
+use crate::{ArklibError, Result, ARK_FOLDER, PREVIEWS_STORAGE_FOLDER};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
