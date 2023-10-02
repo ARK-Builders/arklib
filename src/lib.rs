@@ -28,7 +28,6 @@ use log;
 pub const ARK_FOLDER: &str = ".ark";
 
 // must not be lost (user data)
-pub const TAGS_PATH: &str = "tags";
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
 

@@ -49,7 +49,7 @@ impl Link {
     ) -> Result<Metadata, Error> {
         let path = root
             .as_ref()
-            .join(STORAGES_FOLDER)
+            .join(ARK_FOLDER)
             .join(PROPERTIES_STORAGE_FOLDER)
             .join(id.to_string());
         let file = AtomicFile::new(path)?;
@@ -92,7 +92,7 @@ impl Link {
     ) -> Result<()> {
         let id = self.id()?;
         let id = id.to_string();
-        let base_dir = root.as_ref().join(STORAGES_FOLDER);
+        let base_dir = root.as_ref().join(ARK_FOLDER);
         let folder = base_dir.join(LINK_STORAGE_FOLDER).join(&id);
         let link_file = AtomicFile::new(&folder)?;
         let tmp = link_file.make_temp()?;
@@ -332,7 +332,7 @@ async fn test_create_link_file() {
         Link::new(url, String::from("title"), Some(String::from("desc")));
 
     let path = root
-        .join(STORAGES_FOLDER)
+        .join(ARK_FOLDER)
         .join(LINK_STORAGE_FOLDER)
         .join(link.id().unwrap().to_string());
     let file = AtomicFile::new(&path).unwrap();
@@ -353,7 +353,7 @@ async fn test_create_link_file() {
         println!("resource: {}, {}", id.crc32, id.data_size);
 
         let path = Path::new(root)
-            .join(STORAGES_FOLDER)
+            .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
             .join(id.to_string());
         println!("Path: {} exist: {}", path.display(), path.exists());
