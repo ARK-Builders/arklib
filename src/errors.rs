@@ -8,8 +8,8 @@ pub type Result<T> = std::result::Result<T, ArklibError>;
 pub enum ArklibError {
     #[error("IO error")]
     Io(#[from] std::io::Error),
-    #[error("Invalid path for ressource")]
-    Path,
+    #[error("Path error: {0}")]
+    Path(String),
     #[error("There is some collision: {0}")]
     Collision(String),
     #[error("Parsing error")]

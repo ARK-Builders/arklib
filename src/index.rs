@@ -75,48 +75,41 @@ impl ResourceIndex {
 
         let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
 
-        if let Ok(file) = File::open(&index_path) {
-            let mut index = ResourceIndex {
-                id2path: HashMap::new(),
-                path2id: HashMap::new(),
-                collisions: HashMap::new(),
-                root: root_path.clone(),
-            };
+        let file = File::open(&index_path)?;
+        let mut index = ResourceIndex {
+            id2path: HashMap::new(),
+            path2id: HashMap::new(),
+            collisions: HashMap::new(),
+            root: root_path.clone(),
+        };
 
-            for line in BufReader::new(file).lines() {
-                if let Ok(entry) = line {
-                    let mut parts = entry.split(' ');
+        for line in BufReader::new(file).lines() {
+            if let Ok(entry) = line {
+                let mut parts = entry.split(' ');
 
-                    let modified: SystemTime = {
-                        let str = parts.next().ok_or(anyhow::Error::msg(
-                            "Couldn't find first part of index entry",
-                        ))?;
-                        UNIX_EPOCH.add(Duration::from_millis(
-                            str.parse().map_err(|_| ArklibError::Parse)?,
-                        ))
-                    };
+                let modified: SystemTime = {
+                    let str = parts.next().ok_or(ArklibError::Parse)?;
+                    UNIX_EPOCH.add(Duration::from_millis(
+                        str.parse().map_err(|_| ArklibError::Parse)?,
+                    ))
+                };
 
-                    let id: ResourceId = {
-                        let str = parts.next().ok_or(anyhow::Error::msg(
-                            "Couldn't find second part of index entry",
-                        ))?;
-                        ResourceId::from_str(str)?
-                    };
+                let id: ResourceId = {
+                    let str = parts.next().ok_or(ArklibError::Parse)?;
+                    ResourceId::from_str(str)?
+                };
 
-                    let path: String = parts.intersperse(" ").collect();
-                    let path: PathBuf = root_path.join(Path::new(&path));
-                    let path: CanonicalPathBuf =
-                        CanonicalPathBuf::canonicalize(path)?;
+                let path: String = parts.intersperse(" ").collect();
+                let path: PathBuf = root_path.join(Path::new(&path));
+                let path: CanonicalPathBuf =
+                    CanonicalPathBuf::canonicalize(path)?;
 
-                    log::trace!("[load] {} -> {}", id, path.display());
-                    index.insert_entry(path, IndexEntry { id, modified });
-                }
+                log::trace!("[load] {} -> {}", id, path.display());
+                index.insert_entry(path, IndexEntry { id, modified });
             }
-
-            Ok(index)
-        } else {
-            Err(crate::ArklibError::Path)
         }
+
+        Ok(index)
     }
 
     pub fn store(&self) -> Result<()> {
@@ -152,7 +145,9 @@ impl ResourceIndex {
 
             let path =
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
-                    .ok_or(ArklibError::Path)?;
+                    .ok_or(ArklibError::Path(
+                        "Couldn't calculate path diff".into(),
+                    ))?;
 
             write!(file, "{} {} {}\n", timestamp, entry.id, path.display())?;
         }
@@ -458,7 +453,7 @@ impl ResourceIndex {
                 );
             } else {
                 return Err(ArklibError::Collision(
-                    "Illegal state of collision tracker".into(),
+                    "New content has the same id.".into(),
                 ));
             }
         } else {
@@ -515,12 +510,15 @@ fn discover_paths<P: AsRef<Path>>(
 
 fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
     if metadata.is_dir() {
-        return Err(ArklibError::Path);
+        return Err(ArklibError::Path("Metadata is a directory".into()));
     }
 
     let size = metadata.len();
     if size == 0 {
-        return Err(ArklibError::Path);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Empty resource",
+        ))?;
     }
 
     let id = ResourceId::compute(size, path)?;
