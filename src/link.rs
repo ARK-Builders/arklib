@@ -1,9 +1,9 @@
 use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
-use crate::{Result,
-    AtomicFile, LINK_STORAGE_FOLDER, METADATA_STORAGE_FOLDER,
-    PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER, ARK_FOLDER,
-    meta::load_meta_bytes
+use crate::{
+    meta::load_meta_bytes, AtomicFile, Result, ARK_FOLDER, LINK_STORAGE_FOLDER,
+    METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
+    PROPERTIES_STORAGE_FOLDER,
 };
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
@@ -13,9 +13,6 @@ use std::path::Path;
 use std::str::{self, FromStr};
 use std::{io::Write, path::PathBuf};
 use url::Url;
-
-
-
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
@@ -91,7 +88,9 @@ impl Link {
         let id = self.id()?;
         let id_string = id.to_string();
         let base_dir = root.as_ref().join(ARK_FOLDER);
-        let folder = base_dir.join(LINK_STORAGE_FOLDER).join(&id_string);
+        let folder = base_dir
+            .join(LINK_STORAGE_FOLDER)
+            .join(&id_string);
         let link_file = AtomicFile::new(&folder)?;
         let tmp = link_file.make_temp()?;
         (&tmp).write_all(self.url.as_str().as_bytes())?;
@@ -99,7 +98,9 @@ impl Link {
         link_file.compare_and_swap(&current_link, tmp)?;
 
         //User defined properties
-        let prop_folder = base_dir.join(PROPERTIES_STORAGE_FOLDER).join(&id_string);
+        let prop_folder = base_dir
+            .join(PROPERTIES_STORAGE_FOLDER)
+            .join(&id_string);
         let prop_file = AtomicFile::new(prop_folder)?;
         modify_json(&prop_file, |data: &mut Option<Metadata>| {
             let metadata = self.meta.clone();
@@ -114,7 +115,9 @@ impl Link {
 
         // Generated data
         if let Ok(data) = self.get_preview().await {
-            let graph_folder = base_dir.join(METADATA_STORAGE_FOLDER).join(&id_string);
+            let graph_folder = base_dir
+                .join(METADATA_STORAGE_FOLDER)
+                .join(&id_string);
             let file = AtomicFile::new(graph_folder)?;
             modify_json(&file, |file_data: &mut Option<OpenGraph>| {
                 let graph = data.clone();
