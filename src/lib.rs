@@ -7,15 +7,13 @@ pub mod id;
 pub mod link;
 pub mod pdf;
 mod atomic_file;
-
 pub use atomic_file::AtomicFile;
-pub mod id;
 pub mod index;
-pub mod link;
-mod meta;
-pub mod pdf;
-
+pub mod meta;
 use index::ResourceIndex;
+
+
+
 
 use std::collections::HashMap;
 use std::path::Path;
