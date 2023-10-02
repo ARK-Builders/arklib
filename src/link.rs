@@ -1,11 +1,10 @@
 use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
-use crate::meta::load_meta_bytes;
-use crate::{ArklibError, Result,
+use crate::{Result,
     AtomicFile, LINK_STORAGE_FOLDER, METADATA_STORAGE_FOLDER,
     PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER, ARK_FOLDER,
+    meta::load_meta_bytes
 };
-use anyhow::Error;
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -16,7 +15,6 @@ use std::{io::Write, path::PathBuf};
 use url::Url;
 
 
-use crate::meta::store_meta;
 
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -46,7 +44,7 @@ impl Link {
     fn load_user_data<P: AsRef<Path>>(
         root: P,
         id: &ResourceId,
-    ) -> Result<Metadata, Error> {
+    ) -> Result<Metadata> {
         let path = root
             .as_ref()
             .join(ARK_FOLDER)
@@ -91,9 +89,9 @@ impl Link {
         with_preview: bool,
     ) -> Result<()> {
         let id = self.id()?;
-        let id = id.to_string();
+        let id_string = id.to_string();
         let base_dir = root.as_ref().join(ARK_FOLDER);
-        let folder = base_dir.join(LINK_STORAGE_FOLDER).join(&id);
+        let folder = base_dir.join(LINK_STORAGE_FOLDER).join(&id_string);
         let link_file = AtomicFile::new(&folder)?;
         let tmp = link_file.make_temp()?;
         (&tmp).write_all(self.url.as_str().as_bytes())?;
@@ -101,7 +99,7 @@ impl Link {
         link_file.compare_and_swap(&current_link, tmp)?;
 
         //User defined properties
-        let prop_folder = base_dir.join(PROPERTIES_STORAGE_FOLDER).join(&id);
+        let prop_folder = base_dir.join(PROPERTIES_STORAGE_FOLDER).join(&id_string);
         let prop_file = AtomicFile::new(prop_folder)?;
         modify_json(&prop_file, |data: &mut Option<Metadata>| {
             let metadata = self.meta.clone();
@@ -116,7 +114,7 @@ impl Link {
 
         // Generated data
         if let Ok(data) = self.get_preview().await {
-            let graph_folder = base_dir.join(METADATA_STORAGE_FOLDER).join(&id);
+            let graph_folder = base_dir.join(METADATA_STORAGE_FOLDER).join(&id_string);
             let file = AtomicFile::new(graph_folder)?;
             modify_json(&file, |file_data: &mut Option<OpenGraph>| {
                 let graph = data.clone();
@@ -131,7 +129,7 @@ impl Link {
             })?;
             if with_preview {
                 if let Some(preview_data) = data.fetch_image().await {
-                    self.save_preview(root, preview_data)?;
+                    self.save_preview(root, preview_data, &id)?;
                 }
             }
         }
