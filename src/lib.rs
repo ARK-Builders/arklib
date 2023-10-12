@@ -9,7 +9,7 @@ pub mod link;
 pub mod pdf;
 pub use atomic_file::AtomicFile;
 pub mod index;
-pub mod meta;
+pub mod prop;
 use index::ResourceIndex;
 
 use std::collections::HashMap;
