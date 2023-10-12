@@ -11,7 +11,7 @@ use crate::{
 
 /// Dynamic metadata: stored as JSON and
 /// interpreted differently depending on kind of a resource
-pub fn store_meta<
+pub fn store_properties<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
 >(
@@ -22,7 +22,7 @@ pub fn store_meta<
     let file = AtomicFile::new(
         root.as_ref()
             .join(ARK_FOLDER)
-            .join(METADATA_STORAGE_FOLDER)
+            .join(PROPERTIES_STORAGE_FOLDER)
             .join(id.to_string()),
     )?;
     modify_json(&file, |previous_data: &mut Option<S>| {
@@ -39,7 +39,7 @@ pub fn store_meta<
 }
 
 /// The file must exist if this method is called
-pub fn load_prop_bytes<P: AsRef<Path>>(
+pub fn load_raw_properties<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
 ) -> Result<Vec<u8>> {
@@ -68,7 +68,7 @@ mod tests {
     use tempdir::TempDir;
 
     use std::collections::HashMap;
-    type TestMetadata = HashMap<String, String>;
+    type TestProperties = HashMap<String, String>;
 
     #[test]
     fn test_store_and_load() {
@@ -81,14 +81,14 @@ mod tests {
             data_size: 1,
         };
 
-        let mut meta = TestMetadata::new();
-        meta.insert("abc".to_string(), "def".to_string());
-        meta.insert("xyz".to_string(), "123".to_string());
+        let mut prop = TestProperties::new();
+        prop.insert("abc".to_string(), "def".to_string());
+        prop.insert("xyz".to_string(), "123".to_string());
 
-        store_meta(root, id, meta.clone()).unwrap();
+        store_properties(root, id, prop.clone()).unwrap();
 
-        let bytes = load_prop_bytes(root, id).unwrap();
-        let meta2: TestMetadata = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(meta, meta2);
+        let bytes = load_raw_properties(root, id).unwrap();
+        let prop2: TestProperties = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(prop, prop2);
     }
 }

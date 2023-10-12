@@ -1,8 +1,8 @@
 use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
 use crate::{
-    meta::load_prop_bytes, AtomicFile, Result, ARK_FOLDER, LINK_STORAGE_FOLDER,
-    METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
+    prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
+    LINK_STORAGE_FOLDER, METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
     PROPERTIES_STORAGE_FOLDER,
 };
 use reqwest::header::HeaderValue;
@@ -66,7 +66,7 @@ impl Link {
         // Only load properties if the description is not set
         if description.is_none() {
             let bytes =
-                load_prop_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
+                load_raw_properties::<PathBuf>(root.as_ref().to_owned(), id)?;
             let graph_meta: OpenGraph = serde_json::from_slice(&bytes)?;
             description = graph_meta.description;
         }
