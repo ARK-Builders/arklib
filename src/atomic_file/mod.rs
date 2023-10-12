@@ -4,7 +4,7 @@ use std::io::{Read, Result, Write};
 
 pub use atomic::AtomicFile;
 
-pub fn modifiy(
+pub fn modify(
     x: &AtomicFile,
     mut op: impl FnMut(&[u8]) -> Vec<u8>,
 ) -> Result<()> {
@@ -62,7 +62,7 @@ mod tests {
     use tempdir::TempDir;
 
     #[test]
-    fn failed_to_write_simulteanously() {
+    fn failed_to_write_simultaneously() {
         let dir = TempDir::new("writing_test").unwrap();
         let root = dir.path();
         let shared_file = std::sync::Arc::new(AtomicFile::new(&root).unwrap());
@@ -93,8 +93,8 @@ mod tests {
     }
 
     #[test]
-    fn multiples_write_detected() {
-        let dir = TempDir::new("simulteanous_writes").unwrap();
+    fn multiple_writes_detected() {
+        let dir = TempDir::new("simultaneous_writes").unwrap();
         let root = dir.path();
         let shared_file = std::sync::Arc::new(AtomicFile::new(&root).unwrap());
         let thread_number = 10;
@@ -103,7 +103,7 @@ mod tests {
         for _ in 0..thread_number {
             let file = shared_file.clone();
             let handle = std::thread::spawn(move || {
-                modifiy(&file, |data| {
+                modify(&file, |data| {
                     if data.len() == 0 {
                         // Buffer has already been filled by another thread
                         "First content of file".as_bytes().to_vec()

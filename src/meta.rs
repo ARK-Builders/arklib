@@ -5,7 +5,9 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::id::ResourceId;
-use crate::{Result, ARK_FOLDER, METADATA_STORAGE_FOLDER};
+use crate::{
+    Result, ARK_FOLDER, METADATA_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
+};
 
 /// Dynamic metadata: stored as JSON and
 /// interpreted differently depending on kind of a resource
@@ -37,14 +39,14 @@ pub fn store_meta<
 }
 
 /// The file must exist if this method is called
-pub fn load_meta_bytes<P: AsRef<Path>>(
+pub fn load_prop_bytes<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
 ) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()
         .join(ARK_FOLDER)
-        .join(METADATA_STORAGE_FOLDER)
+        .join(PROPERTIES_STORAGE_FOLDER)
         .join(id.to_string());
     let file = AtomicFile::new(storage)?;
     let read_file = file.load()?;
@@ -85,7 +87,7 @@ mod tests {
 
         store_meta(root, id, meta.clone()).unwrap();
 
-        let bytes = load_meta_bytes(root, id).unwrap();
+        let bytes = load_prop_bytes(root, id).unwrap();
         let meta2: TestMetadata = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(meta, meta2);
     }
