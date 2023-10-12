@@ -1,7 +1,7 @@
 use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
 use crate::{
-    meta::load_meta_bytes, AtomicFile, Result, ARK_FOLDER, LINK_STORAGE_FOLDER,
+    meta::load_prop_bytes, AtomicFile, Result, ARK_FOLDER, LINK_STORAGE_FOLDER,
     METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
     PROPERTIES_STORAGE_FOLDER,
 };
@@ -17,11 +17,11 @@ use url::Url;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Link {
     pub url: Url,
-    pub meta: Metadata,
+    pub prop: Properties,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Metadata {
+pub struct Properties {
     pub title: String,
     pub desc: Option<String>,
 }
@@ -30,7 +30,7 @@ impl Link {
     pub fn new(url: Url, title: String, desc: Option<String>) -> Self {
         Self {
             url,
-            meta: Metadata { title, desc },
+            prop: Properties { title, desc },
         }
     }
 
@@ -41,7 +41,7 @@ impl Link {
     fn load_user_data<P: AsRef<Path>>(
         root: P,
         id: &ResourceId,
-    ) -> Result<Metadata> {
+    ) -> Result<Properties> {
         let path = root
             .as_ref()
             .join(ARK_FOLDER)
@@ -50,31 +50,31 @@ impl Link {
         let file = AtomicFile::new(path)?;
         let current = file.load()?;
         let data = current.read_to_string()?;
-        let user_meta: Metadata = serde_json::from_str(&data)?;
+        let user_meta: Properties = serde_json::from_str(&data)?;
         Ok(user_meta)
     }
 
-    /// Load a link with its metadata from file
+    /// Load a link with its properties from file
     pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self> {
         let p = path.as_ref().to_path_buf();
         let url = Self::load_url(p)?;
         let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
         // Load user properties first
-        let user_meta = Self::load_user_data(&root, &id)?;
-        let mut description = user_meta.desc;
+        let user_prop = Self::load_user_data(&root, &id)?;
+        let mut description = user_prop.desc;
 
-        // Only load metadata if description is not set
+        // Only load properties if the description is not set
         if description.is_none() {
             let bytes =
-                load_meta_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
+                load_prop_bytes::<PathBuf>(root.as_ref().to_owned(), id)?;
             let graph_meta: OpenGraph = serde_json::from_slice(&bytes)?;
             description = graph_meta.description;
         }
 
         Ok(Self {
             url,
-            meta: Metadata {
-                title: user_meta.title,
+            prop: Properties {
+                title: user_prop.title,
                 desc: description,
             },
         })
@@ -102,14 +102,14 @@ impl Link {
             .join(PROPERTIES_STORAGE_FOLDER)
             .join(&id_string);
         let prop_file = AtomicFile::new(prop_folder)?;
-        modify_json(&prop_file, |data: &mut Option<Metadata>| {
-            let metadata = self.meta.clone();
+        modify_json(&prop_file, |data: &mut Option<Properties>| {
+            let properties = self.prop.clone();
             match data {
                 Some(data) => {
                     // Hack currently overwrites
-                    *data = metadata;
+                    *data = properties;
                 }
-                None => *data = Some(metadata),
+                None => *data = Some(properties),
             }
         })?;
 
@@ -158,14 +158,14 @@ impl Link {
         Ok(())
     }
 
-    /// Get metadata of the link (synced).
+    /// Get OGP metadata of the link (synced).
     pub fn get_preview_synced(&self) -> Result<OpenGraph> {
         let runtime =
             tokio::runtime::Runtime::new().expect("Unable to create a runtime");
         return runtime.block_on(self.get_preview());
     }
 
-    /// Get metadata of the link.
+    /// Get OGP metadata of the link.
     pub async fn get_preview(&self) -> Result<OpenGraph> {
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(
@@ -347,8 +347,8 @@ async fn test_create_link_file() {
         assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
         let link = Link::load(root.clone(), path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
-        assert_eq!(link.meta.desc.unwrap(), "desc");
-        assert_eq!(link.meta.title, "title");
+        assert_eq!(link.prop.desc.unwrap(), "desc");
+        assert_eq!(link.prop.title, "title");
 
         let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
         println!("resource: {}, {}", id.crc32, id.data_size);

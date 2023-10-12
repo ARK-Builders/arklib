@@ -51,8 +51,8 @@ pub struct ReadOnlyFile {
 /// This struct is the only way to read the file. Both path and version are private
 impl ReadOnlyFile {
     /// Open the underlying file, which can be read from but not written to.
-    /// May return `Ok(None)`, which means that no version of the `AtomicFile`
-    /// has not been created yet.
+    /// May return `Ok(None)`, which means that no version
+    /// of the`AtomicFile` has been created yet.
     pub fn open(&self) -> Result<Option<File>> {
         if self.version != 0 {
             Ok(Some(File::open(&self.path)?))
