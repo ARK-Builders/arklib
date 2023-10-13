@@ -512,7 +512,7 @@ fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
 
     let size = metadata.len();
     if size == 0 {
-        return Err(std::io::Error::new(
+        Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Empty resource",
         ))?;
