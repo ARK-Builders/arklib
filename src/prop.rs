@@ -5,9 +5,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::id::ResourceId;
-use crate::{
-    Result, ARK_FOLDER, METADATA_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
-};
+use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 
 /// Dynamic metadata: stored as JSON and
 /// interpreted differently depending on kind of a resource

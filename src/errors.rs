@@ -33,13 +33,13 @@ impl From<Utf8Error> for ArklibError {
 }
 
 impl From<serde_json::Error> for ArklibError {
-    fn from(value: serde_json::Error) -> Self {
+    fn from(_: serde_json::Error) -> Self {
         Self::Parse
     }
 }
 
 impl From<url::ParseError> for ArklibError {
-    fn from(value: url::ParseError) -> Self {
+    fn from(_: url::ParseError) -> Self {
         Self::Parse
     }
 }

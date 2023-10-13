@@ -65,8 +65,7 @@ impl Link {
 
         // Only load properties if the description is not set
         if description.is_none() {
-            let bytes =
-                load_raw_properties::<PathBuf>(root.as_ref().to_owned(), id)?;
+            let bytes = load_raw_properties(root.as_ref(), id)?;
             let graph_meta: OpenGraph = serde_json::from_slice(&bytes)?;
             description = graph_meta.description;
         }
@@ -179,7 +178,7 @@ impl Link {
             .build()?;
         let url = self.url.to_string();
         let scraper = client.get(url).send().await?.text().await?;
-        let html = Html::parse_document(&scraper.as_str());
+        let html = Html::parse_document(scraper.as_str());
         let title =
             select_og(&html, OpenGraphTag::Title).or(select_title(&html));
         Ok(OpenGraph {

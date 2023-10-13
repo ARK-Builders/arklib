@@ -14,7 +14,7 @@ impl TmpFile {
         let filename: String = std::iter::repeat_with(fastrand::alphanumeric)
             .take(10)
             .collect();
-        let path = temp_dir.as_ref().join(&filename);
+        let path = temp_dir.as_ref().join(filename);
         let file = std::fs::File::create(&path)?;
         Ok(Self { file, path })
     }
@@ -70,6 +70,18 @@ impl ReadOnlyFile {
                 Ok(buff)
             }
             Err(e) => Err(e),
+        }
+    }
+
+    pub fn read_content(&self) -> Result<Vec<u8>> {
+        match self.open() {
+            Ok(None) => Err(Error::new(ErrorKind::NotFound, "File not found")),
+            Err(e) => Err(e),
+            Ok(Some(mut file)) => {
+                let mut buf = vec![];
+                file.read_to_end(&mut buf)?;
+                Ok(buf)
+            }
         }
     }
 }
@@ -146,9 +158,9 @@ impl AtomicFile {
         new: TmpFile,
     ) -> Result<()> {
         let new_path = self.path(current.version + 1);
-        (&new.file).sync_data()?;
+        (new.file).sync_data()?;
         // May return `EEXIST`.
-        let res = std::fs::hard_link(&new.path, &new_path);
+        let res = std::fs::hard_link(&new.path, new_path);
         if let Err(err) = res {
             #[cfg(target_os = "unix")]
             // From open(2) manual page:

@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
 use std::io::{BufRead, BufReader, Write};
@@ -136,7 +135,7 @@ impl ResourceIndex {
 
         let mut path2id: Vec<(&CanonicalPathBuf, &IndexEntry)> =
             self.path2id.iter().collect();
-        path2id.sort_by_key(|(_, entry)| entry.clone());
+        path2id.sort_by_key(|(_, entry)| *entry);
 
         for (path, entry) in path2id.iter() {
             log::trace!("[store] {} by path {}", entry.id, path.display());
@@ -155,7 +154,7 @@ impl ResourceIndex {
                         "Couldn't calculate path diff".into(),
                     ))?;
 
-            write!(file, "{} {} {}\n", timestamp, entry.id, path.display())?;
+            writeln!(file, "{} {} {}", timestamp, entry.id, path.display())?;
         }
 
         log::trace!(
@@ -445,14 +444,14 @@ impl ResourceIndex {
         log::trace!("[add] {} by path {}", entry.id, path.display());
         let id = entry.id;
 
-        if self.id2path.contains_key(&id) {
-            if let Some(nonempty) = self.collisions.get_mut(&id) {
-                *nonempty += 1;
-            } else {
-                self.collisions.insert(id, 2);
-            }
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            self.id2path.entry(id)
+        {
+            e.insert(path.clone());
+        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
+            *nonempty += 1;
         } else {
-            self.id2path.insert(id, path.clone());
+            self.collisions.insert(id, 2);
         }
 
         self.path2id.insert(path, entry);
@@ -465,7 +464,7 @@ impl ResourceIndex {
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
-        if let Some(mut collisions) = self.collisions.get_mut(&old_id) {
+        if let Some(collisions) = self.collisions.get_mut(&old_id) {
             debug_assert!(
                 *collisions > 1,
                 "Any collision must involve at least 2 resources"
@@ -509,10 +508,10 @@ impl ResourceIndex {
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
 
-        return Ok(IndexUpdate {
+        Ok(IndexUpdate {
             added: HashMap::new(),
             deleted,
-        });
+        })
     }
 }
 
@@ -602,7 +601,7 @@ fn is_hidden(entry: &DirEntry) -> bool {
     entry
         .file_name()
         .to_str()
-        .map(|s| s.starts_with("."))
+        .map(|s| s.starts_with('.'))
         .unwrap_or(false)
 }
 
@@ -613,9 +612,9 @@ mod tests {
     use crate::ArklibError;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
-    use std::fs::{File, Permissions};
+    use std::fs::File;
     #[cfg(target_os = "unix")]
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{Permissions, PermissionsExt};
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::time::SystemTime;
