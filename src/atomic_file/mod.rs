@@ -5,21 +5,21 @@ use std::io::{Read, Result, Write};
 pub use atomic::AtomicFile;
 
 pub fn modify(
-    x: &AtomicFile,
-    mut op: impl FnMut(&[u8]) -> Vec<u8>,
+    atomic_file: &AtomicFile,
+    mut operator: impl FnMut(&[u8]) -> Vec<u8>,
 ) -> Result<()> {
     let mut buf = vec![];
     loop {
-        let latest = x.load()?;
+        let latest = atomic_file.load()?;
         buf.clear();
         if let Some(mut file) = latest.open()? {
             file.read_to_end(&mut buf)?;
         }
-        let data = op(&buf);
-        let tmp = x.make_temp()?;
+        let data = operator(&buf);
+        let tmp = atomic_file.make_temp()?;
         (&tmp).write_all(&data)?;
         (&tmp).flush()?;
-        match x.compare_and_swap(&latest, tmp) {
+        match atomic_file.compare_and_swap(&latest, tmp) {
             Ok(()) => return Ok(()),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 continue
@@ -30,22 +30,22 @@ pub fn modify(
 }
 
 pub fn modify_json<T: Serialize + DeserializeOwned>(
-    x: &AtomicFile,
-    mut op: impl FnMut(&mut Option<T>),
+    atomic_file: &AtomicFile,
+    mut operator: impl FnMut(&mut Option<T>),
 ) -> std::io::Result<()> {
     loop {
-        let latest = x.load()?;
+        let latest = atomic_file.load()?;
         let mut val = None;
         if let Some(file) = latest.open()? {
             val = Some(serde_json::from_reader(std::io::BufReader::new(file))?);
         }
-        op(&mut val);
-        let tmp = x.make_temp()?;
+        operator(&mut val);
+        let tmp = atomic_file.make_temp()?;
         let mut w = std::io::BufWriter::new(&tmp);
         serde_json::to_writer(&mut w, &val)?;
         w.flush()?;
         drop(w);
-        match x.compare_and_swap(&latest, tmp) {
+        match atomic_file.compare_and_swap(&latest, tmp) {
             Ok(()) => return Ok(()),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 continue
@@ -99,41 +99,16 @@ mod tests {
         let shared_file = std::sync::Arc::new(AtomicFile::new(&root).unwrap());
         let thread_number = 10;
         assert!(thread_number > 3);
+        // Need to have less than 255 thread to store thread number as byte directly
+        assert!(thread_number < 256);
         let mut handles = Vec::with_capacity(thread_number);
-        for _ in 0..thread_number {
+        for i in 0..thread_number {
             let file = shared_file.clone();
             let handle = std::thread::spawn(move || {
                 modify(&file, |data| {
-                    if data.len() == 0 {
-                        // Buffer has already been filled by another thread
-                        "First content of file".as_bytes().to_vec()
-                    } else {
-                        let previous_content =
-                            std::str::from_utf8(data).unwrap();
-                        match previous_content {
-                            "First content of file" => {
-                                "Second content of file".as_bytes().to_vec()
-                            }
-                            "Second content of file" => {
-                                "Third content of file".as_bytes().to_vec()
-                            }
-                            "Third content of file" => {
-                                "4th content of file".as_bytes().to_vec()
-                            }
-                            _ => {
-                                let mut iter = previous_content.split("th");
-                                let number = iter.next().unwrap();
-                                let number = number.parse::<usize>().unwrap();
-                                format!(
-                                    "{}th{}",
-                                    number + 1,
-                                    iter.next().unwrap()
-                                )
-                                .as_bytes()
-                                .to_vec()
-                            }
-                        }
-                    }
+                    let mut data = data.to_vec();
+                    data.push(i.try_into().unwrap());
+                    data
                 })
             });
             handles.push(handle);
@@ -143,10 +118,10 @@ mod tests {
         });
         // Last content
         let last_file = shared_file.load().unwrap();
-        let last_content = last_file.read_to_string().unwrap();
-        assert_eq!(
-            last_content,
-            format!("{}th content of file", thread_number)
-        );
+        let last_content = last_file.read_content().unwrap();
+        for i in 0..thread_number {
+            let as_byte = i.try_into().unwrap();
+            assert!(last_content.contains(&as_byte));
+        }
     }
 }

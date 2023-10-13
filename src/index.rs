@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
 use std::io::{BufRead, BufReader, Write};
@@ -83,30 +82,28 @@ impl ResourceIndex {
             root: root_path.clone(),
         };
 
-        for line in BufReader::new(file).lines() {
-            if let Ok(entry) = line {
-                let mut parts = entry.split(' ');
+        for line in BufReader::new(file).lines().flatten() {
+            let mut parts = line.split(' ');
 
-                let modified: SystemTime = {
-                    let str = parts.next().ok_or(ArklibError::Parse)?;
-                    UNIX_EPOCH.add(Duration::from_millis(
-                        str.parse().map_err(|_| ArklibError::Parse)?,
-                    ))
-                };
+            let modified: SystemTime = {
+                let str = parts.next().ok_or(ArklibError::Parse)?;
+                UNIX_EPOCH.add(Duration::from_millis(
+                    str.parse().map_err(|_| ArklibError::Parse)?,
+                ))
+            };
 
-                let id: ResourceId = {
-                    let str = parts.next().ok_or(ArklibError::Parse)?;
-                    ResourceId::from_str(str)?
-                };
+            let id: ResourceId = {
+                let str = parts.next().ok_or(ArklibError::Parse)?;
+                ResourceId::from_str(str)?
+            };
 
-                let path: String = parts.intersperse(" ").collect();
-                let path: PathBuf = root_path.join(Path::new(&path));
-                let path: CanonicalPathBuf =
-                    CanonicalPathBuf::canonicalize(path)?;
+            let path: String =
+                itertools::Itertools::intersperse(parts, " ").collect();
+            let path: PathBuf = root_path.join(Path::new(&path));
+            let path: CanonicalPathBuf = CanonicalPathBuf::canonicalize(path)?;
 
-                log::trace!("[load] {} -> {}", id, path.display());
-                index.insert_entry(path, IndexEntry { id, modified });
-            }
+            log::trace!("[load] {} -> {}", id, path.display());
+            index.insert_entry(path, IndexEntry { id, modified });
         }
 
         Ok(index)
@@ -130,7 +127,7 @@ impl ResourceIndex {
 
         let mut path2id: Vec<(&CanonicalPathBuf, &IndexEntry)> =
             self.path2id.iter().collect();
-        path2id.sort_by_key(|(_, entry)| entry.clone());
+        path2id.sort_by_key(|(_, entry)| *entry);
 
         for (path, entry) in path2id.iter() {
             log::trace!("[store] {} by path {}", entry.id, path.display());
@@ -149,7 +146,7 @@ impl ResourceIndex {
                         "Couldn't calculate path diff".into(),
                     ))?;
 
-            write!(file, "{} {} {}\n", timestamp, entry.id, path.display())?;
+            writeln!(file, "{} {} {}", timestamp, entry.id, path.display())?;
         }
 
         log::trace!(
@@ -352,7 +349,7 @@ impl ResourceIndex {
             self.path2id[path]
         );
 
-        return match fs::metadata(path) {
+        match fs::metadata(path) {
             Err(_) => {
                 // updating the index after resource removal is a correct scenario
                 self.forget_path(path, old_id)
@@ -392,21 +389,21 @@ impl ResourceIndex {
                     }
                 }
             }
-        };
+        }
     }
 
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
         let id = entry.id;
 
-        if self.id2path.contains_key(&id) {
-            if let Some(nonempty) = self.collisions.get_mut(&id) {
-                *nonempty += 1;
-            } else {
-                self.collisions.insert(id, 2);
-            }
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            self.id2path.entry(id)
+        {
+            e.insert(path.clone());
+        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
+            *nonempty += 1;
         } else {
-            self.id2path.insert(id, path.clone());
+            self.collisions.insert(id, 2);
         }
 
         self.path2id.insert(path, entry);
@@ -419,7 +416,7 @@ impl ResourceIndex {
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
-        if let Some(mut collisions) = self.collisions.get_mut(&old_id) {
+        if let Some(collisions) = self.collisions.get_mut(&old_id) {
             debug_assert!(
                 *collisions > 1,
                 "Any collision must involve at least 2 resources"
@@ -463,10 +460,10 @@ impl ResourceIndex {
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
 
-        return Ok(IndexUpdate {
+        Ok(IndexUpdate {
             added: HashMap::new(),
             deleted,
-        });
+        })
     }
 }
 
@@ -556,7 +553,7 @@ fn is_hidden(entry: &DirEntry) -> bool {
     entry
         .file_name()
         .to_str()
-        .map(|s| s.starts_with("."))
+        .map(|s| s.starts_with('.'))
         .unwrap_or(false)
 }
 
@@ -566,9 +563,9 @@ mod tests {
     use crate::index::{discover_paths, IndexEntry};
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
-    use std::fs::{File, Permissions};
+    use std::fs::File;
     #[cfg(target_os = "unix")]
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{Permissions, PermissionsExt};
     use std::path::PathBuf;
     use std::time::SystemTime;
     use uuid::Uuid;

@@ -3,11 +3,11 @@ use crc32fast::Hasher;
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
+use std::fs;
 use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
-use std::{fs, num::TryFromIntError};
 
 use crate::{ArklibError, Result};
 
@@ -99,7 +99,7 @@ impl ResourceId {
                 })?;
         }
 
-        let crc32: u32 = hasher.finalize().into();
+        let crc32: u32 = hasher.finalize();
         log::trace!("[compute] {} bytes has been read", bytes_read);
         log::trace!("[compute] checksum: {:#02x}", crc32);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);

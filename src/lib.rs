@@ -1,3 +1,4 @@
+#![deny(clippy::all)]
 #[macro_use]
 extern crate lazy_static;
 extern crate canonical_path;
@@ -7,7 +8,7 @@ mod atomic_file;
 pub mod id;
 pub mod link;
 pub mod pdf;
-pub use atomic_file::AtomicFile;
+pub use atomic_file::{modify, modify_json, AtomicFile};
 pub mod index;
 pub mod prop;
 use index::ResourceIndex;
@@ -17,8 +18,6 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
-
-use log;
 
 pub const ARK_FOLDER: &str = ".ark";
 
