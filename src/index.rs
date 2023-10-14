@@ -904,4 +904,23 @@ mod tests {
         assert!(new2 > old2);
         assert!(new2 > new1);
     }
+
+    #[test]
+    fn should_correctly_update_one_resource() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+            let mut actual = ResourceIndex::build(path.clone());
+            let mut file_path = path.clone();
+            file_path.push(FILE_NAME_1);
+            let old_id = ResourceId {
+                data_size: FILE_SIZE_1,
+                crc32: CRC32_1,
+            };
+            let path_buf = CanonicalPathBuf::canonicalize(&file_path).unwrap();
+            let update = actual
+                .update_one(path_buf.clone(), old_id)
+                .expect("Should update one resource correctly");
+        });
+    }
 }
