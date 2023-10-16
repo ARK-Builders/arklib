@@ -192,7 +192,7 @@ impl AtomicFile {
         if let Ok(iterator) = fs::read_dir(&self.directory) {
             for entry in iterator.flatten() {
                 if let Some(file_version) = parse_version(&entry.file_name()) {
-                    if file_version + MAX_VERSION_FILES < version
+                    if file_version + MAX_VERSION_FILES - 1 <= version
                         && fs::remove_file(entry.path()).is_ok()
                     {
                         deleted += 1;
@@ -201,5 +201,32 @@ impl AtomicFile {
             }
         }
         deleted
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempdir::TempDir;
+
+    #[test]
+    fn delete_old_files() {
+        let dir = TempDir::new("max_files").unwrap();
+        let root = dir.path();
+        let file = AtomicFile::new(&root).unwrap();
+        let number_of_version = 20;
+        assert!(number_of_version > MAX_VERSION_FILES);
+        for i in 0..number_of_version {
+            let temp = file.make_temp().unwrap();
+            let current = file.load().unwrap();
+            let content = format!("Version {}", i + 1);
+            (&temp).write_all(&content.as_bytes()).unwrap();
+            file.compare_and_swap(&current, temp).unwrap();
+        }
+
+        // Check the number of files
+        let version_files = fs::read_dir(&root).unwrap().count();
+        assert_eq!(version_files, MAX_VERSION_FILES);
     }
 }
