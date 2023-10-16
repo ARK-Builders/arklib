@@ -1,13 +1,16 @@
 mod atomic;
 use serde::{de::DeserializeOwned, Serialize};
-use std::io::{Read, Result, Write};
+use std::{
+    io::{Read, Result, Write},
+    usize,
+};
 
 pub use atomic::AtomicFile;
 
 pub fn modify(
     atomic_file: &AtomicFile,
     mut operator: impl FnMut(&[u8]) -> Vec<u8>,
-) -> Result<()> {
+) -> Result<usize> {
     let mut buf = vec![];
     loop {
         let latest = atomic_file.load()?;
@@ -20,7 +23,7 @@ pub fn modify(
         (&tmp).write_all(&data)?;
         (&tmp).flush()?;
         match atomic_file.compare_and_swap(&latest, tmp) {
-            Ok(()) => return Ok(()),
+            Ok(val) => return Ok(val),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 continue
             }
@@ -32,7 +35,7 @@ pub fn modify(
 pub fn modify_json<T: Serialize + DeserializeOwned>(
     atomic_file: &AtomicFile,
     mut operator: impl FnMut(&mut Option<T>),
-) -> std::io::Result<()> {
+) -> std::io::Result<usize> {
     loop {
         let latest = atomic_file.load()?;
         let mut val = None;
@@ -46,7 +49,7 @@ pub fn modify_json<T: Serialize + DeserializeOwned>(
         w.flush()?;
         drop(w);
         match atomic_file.compare_and_swap(&latest, tmp) {
-            Ok(()) => return Ok(()),
+            Ok(val) => return Ok(val),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 continue
             }

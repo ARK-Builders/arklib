@@ -43,3 +43,9 @@ impl From<url::ParseError> for ArklibError {
         Self::Parse
     }
 }
+
+impl From<Box<dyn std::error::Error>> for ArklibError {
+    fn from(e: Box<dyn std::error::Error>) -> Self {
+        Self::Other(anyhow::anyhow!(e.to_string()))
+    }
+}
