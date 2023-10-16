@@ -161,7 +161,7 @@ impl AtomicFile {
         let latest_version = self.latest_version()?;
         if latest_version > current.version {
             return Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
+                std::io::ErrorKind::AlreadyExists,
                 "the `current` file is not the latest version",
             ));
         }
