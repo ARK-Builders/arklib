@@ -4,6 +4,8 @@ use std::io::{Error, ErrorKind, Read, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+const MAX_VERSION_FILES: usize = 10;
+
 pub struct TmpFile {
     file: File,
     path: PathBuf,
@@ -92,37 +94,32 @@ pub struct AtomicFile {
     prefix: String,
 }
 
-fn parse_version(filename: &std::ffi::OsStr, prefix: &str) -> Option<usize> {
+fn parse_version(filename: &std::ffi::OsStr) -> Option<usize> {
     let filename = filename.to_str()?;
-    if !filename.starts_with(prefix) {
-        return None;
-    }
-    filename[prefix.len()..].parse().ok()
+    let (_, version) = filename.rsplit_once('.')?;
+    version.parse().ok()
 }
 
 impl AtomicFile {
-    pub fn new(path: impl Into<PathBuf>) -> Result<Self> {
+    pub fn new(path: impl Into<PathBuf>) -> crate::Result<Self> {
         let directory = path.into();
+        let machine_id = machine_uid::get()?;
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
             Some(name) => name.to_str().unwrap(),
-            None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "`path` must specify a directory name",
-                ));
-            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "`path` must specify a directory name",
+            ))?,
         };
-        let prefix = format!("{}.", filename);
+        let prefix = format!("{}_{}.", filename, machine_id);
         Ok(Self { directory, prefix })
     }
 
     fn latest_version(&self) -> Result<usize> {
         let mut max_version = 0;
         for entry in fs::read_dir(&self.directory)? {
-            if let Some(version) =
-                parse_version(&entry?.file_name(), &self.prefix)
-            {
+            if let Some(version) = parse_version(&entry?.file_name()) {
                 max_version = std::cmp::max(max_version, version);
             }
         }
@@ -152,13 +149,22 @@ impl AtomicFile {
     /// version was not the same as `current` and the operation must be retried
     /// with a fresher version of the file. Any other I/O error is forwarded as
     /// well.
+    /// Return the number of old file deleted after swapping
     pub fn compare_and_swap(
         &self,
         current: &ReadOnlyFile,
         new: TmpFile,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let new_path = self.path(current.version + 1);
         (new.file).sync_data()?;
+        // Just to check if current.version is still the latest_version
+        let latest_version = self.latest_version()?;
+        if latest_version > current.version {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "the `current` file is not the latest version",
+            ));
+        }
         // May return `EEXIST`.
         let res = std::fs::hard_link(&new.path, new_path);
         if let Err(err) = res {
@@ -177,6 +183,23 @@ impl AtomicFile {
             #[cfg(not(target_os = "unix"))]
             Err(err)?;
         }
-        Ok(())
+        Ok(self.prune_old_versions(latest_version))
+    }
+
+    /// Return the number of files deleted
+    fn prune_old_versions(&self, version: usize) -> usize {
+        let mut deleted = 0;
+        if let Ok(iterator) = fs::read_dir(&self.directory) {
+            for entry in iterator.flatten() {
+                if let Some(file_version) = parse_version(&entry.file_name()) {
+                    if file_version + MAX_VERSION_FILES < version
+                        && fs::remove_file(entry.path()).is_ok()
+                    {
+                        deleted += 1;
+                    }
+                }
+            }
+        }
+        deleted
     }
 }
