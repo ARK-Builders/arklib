@@ -24,9 +24,7 @@ pub struct IndexEntry {
 
 #[derive(Clone, Debug)]
 pub struct ResourceIndex {
-    pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
-
     pub collisions: HashMap<ResourceId, usize>,
     root: PathBuf,
 }
@@ -42,11 +40,21 @@ pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 type Paths = HashSet<CanonicalPathBuf>;
 
 impl ResourceIndex {
+
+    /// Returns an Option<CanonicalPathBuf> associated with a resourceID
+    ///
+    /// If not found returns None
+    pub fn id2path(&self, id: &ResourceId) -> Option<CanonicalPathBuf> {
+        self.path2id.iter().find(|(_, v)| v.id == *id).map(|(k, _)| k.to_owned())
+    }
+
+    /// Returns the current size of index
     pub fn size(&self) -> usize {
         //the actual size is lower in presence of collisions
         self.path2id.len()
     }
 
+    /// Builds a new index from the root_path
     pub fn build<P: AsRef<Path>>(root_path: P) -> Self {
         log::info!("Building the index from scratch");
         let root_path: PathBuf = root_path.as_ref().to_owned();
@@ -55,7 +63,6 @@ impl ResourceIndex {
         let entries = scan_entries(entries);
 
         let mut index = ResourceIndex {
-            id2path: HashMap::new(),
             path2id: HashMap::new(),
             collisions: HashMap::new(),
             root: root_path,
@@ -69,6 +76,7 @@ impl ResourceIndex {
         index
     }
 
+    /// Loads the index from a file located at root_path + ARK_FOLDER + INDEX_PATH
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         log::info!("Loading the index from file");
         let root_path: PathBuf = root_path.as_ref().to_owned();
@@ -77,7 +85,6 @@ impl ResourceIndex {
 
         let file = File::open(&index_path)?;
         let mut index = ResourceIndex {
-            id2path: HashMap::new(),
             path2id: HashMap::new(),
             collisions: HashMap::new(),
             root: root_path.clone(),
@@ -112,6 +119,7 @@ impl ResourceIndex {
         Ok(index)
     }
 
+    /// Creates an index file at self.root + ARK_FOLDER + INDEX_PATH 
     pub fn store(&self) -> Result<()> {
         log::info!("Storing the index to file");
 
@@ -161,6 +169,7 @@ impl ResourceIndex {
         Ok(())
     }
 
+    /// Loads the index file and runs update_all on the index
     pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         match Self::load(&root_path) {
             Ok(mut index) => {
@@ -194,6 +203,7 @@ impl ResourceIndex {
         }
     }
 
+    /// Update all in the index
     pub fn update_all(&mut self) -> Result<IndexUpdate> {
         log::debug!("Updating the index");
         log::trace!("[update] known paths: {:?}", self.path2id.keys());
@@ -298,7 +308,6 @@ impl ResourceIndex {
                             entry.id,
                             path.display()
                         );
-                        self.id2path.remove(&entry.id);
                         deleted.insert(entry.id);
                     }
                 } else {
@@ -313,7 +322,7 @@ impl ResourceIndex {
                     log::debug!("Checking added paths");
                     scan_entries(created_paths).into_iter()
                 })
-                .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
+                .filter(|(_, entry)| !self.path2id.values().any(|idx_entry| idx_entry.id == entry.id))
                 .collect();
 
         for (path, entry) in added.iter() {
@@ -338,6 +347,7 @@ impl ResourceIndex {
         Ok(IndexUpdate { deleted, added })
     }
 
+    /// Updates one previous ResourceID with a new path_buf
     pub fn update_one(
         &mut self,
         path_buf: CanonicalPathBuf,
@@ -395,23 +405,23 @@ impl ResourceIndex {
         };
     }
 
+    /// Inserts a single entry into the index
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
         let id = entry.id;
 
-        if self.id2path.contains_key(&id) {
+        if self.path2id.values().any(|idx_entry| idx_entry.id == id) {
             if let Some(nonempty) = self.collisions.get_mut(&id) {
                 *nonempty += 1;
             } else {
                 self.collisions.insert(id, 2);
             }
-        } else {
-            self.id2path.insert(id, path.clone());
         }
 
         self.path2id.insert(path, entry);
     }
 
+    /// Removes a path from index
     fn forget_path(
         &mut self,
         path: &CanonicalPath,
@@ -419,7 +429,7 @@ impl ResourceIndex {
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
-        if let Some(mut collisions) = self.collisions.get_mut(&old_id) {
+        if let Some(collisions) = self.collisions.get_mut(&old_id) {
             debug_assert!(
                 *collisions > 1,
                 "Any collision must involve at least 2 resources"
@@ -443,11 +453,8 @@ impl ResourceIndex {
                 });
 
             if let Some(collided_path) = maybe_collided_path {
-                let old_path =
-                    self.id2path.insert(old_id, collided_path.clone());
-
                 debug_assert_eq!(
-                    old_path.unwrap().as_canonical_path(),
+                    collided_path.as_canonical_path(),
                     path,
                     "Must forget the requested path"
                 );
@@ -456,8 +463,6 @@ impl ResourceIndex {
                     "Illegal state of collision tracker".into(),
                 ));
             }
-        } else {
-            self.id2path.remove(&old_id);
         }
 
         let mut deleted = HashSet::new();
@@ -470,6 +475,7 @@ impl ResourceIndex {
     }
 }
 
+/// Walks the root_path directory for Paths 
 fn discover_paths<P: AsRef<Path>>(
     root_path: P,
 ) -> HashMap<CanonicalPathBuf, DirEntry> {
@@ -508,6 +514,7 @@ fn discover_paths<P: AsRef<Path>>(
         .collect()
 }
 
+/// Checks file metadata and returns an IndexEntry
 fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
     if metadata.is_dir() {
         return Err(ArklibError::Path("Path is expected to be a file".into()));
@@ -527,6 +534,7 @@ fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
     Ok(IndexEntry { id, modified })
 }
 
+/// Scans a collection of DirEntries and returns a collection of IndexEntries
 fn scan_entries(
     entries: HashMap<CanonicalPathBuf, DirEntry>,
 ) -> HashMap<CanonicalPathBuf, IndexEntry> {
@@ -567,7 +575,7 @@ mod tests {
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::fs::{File, Permissions};
-    #[cfg(target_os = "unix")]
+    #[cfg(target_family = "unix")]
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::time::SystemTime;
@@ -626,7 +634,6 @@ mod tests {
     }
 
     // resource index build
-
     #[test]
     fn should_build_resource_index_with_1_file_successfully() {
         run_test_and_clean_up(|path| {
@@ -636,8 +643,7 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 1);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
+            assert!(actual.path2id.values().any(|idx_entry| idx_entry.id == ResourceId {
                 data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
@@ -656,8 +662,7 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
+            assert!(actual.path2id.values().any(|idx_entry| idx_entry.id == ResourceId {
                 data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
@@ -714,12 +719,11 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 2);
-            assert!(actual.id2path.contains_key(&ResourceId {
+            assert!(actual.path2id.values().any(|idx_entry| idx_entry.id == ResourceId {
                 data_size: FILE_SIZE_1,
                 crc32: CRC32_1,
             }));
-            assert!(actual.id2path.contains_key(&ResourceId {
+            assert!(actual.path2id.values().any(|idx_entry| idx_entry.id == ResourceId {
                 data_size: FILE_SIZE_2,
                 crc32: CRC32_2,
             }));
@@ -763,7 +767,6 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 0);
             assert_eq!(update.deleted.len(), 1);
@@ -790,7 +793,7 @@ mod tests {
 
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
-            #[cfg(target_os = "unix")]
+            #[cfg(target_family = "unix")]
             file.set_permissions(Permissions::from_mode(0o222))
                 .expect("Should be fine");
 
@@ -815,7 +818,6 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
     }
@@ -828,7 +830,6 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
     }
@@ -842,7 +843,6 @@ mod tests {
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
             assert_eq!(actual.collisions.len(), 0);
         })
     }
@@ -888,11 +888,6 @@ mod tests {
             },
             modified: SystemTime::now(),
         };
-
-        assert!(new1 == new1);
-        assert!(new2 == new2);
-        assert!(old1 == old1);
-        assert!(old2 == old2);
 
         assert!(new1 != new2);
         assert!(new1 != old1);
