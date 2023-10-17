@@ -26,8 +26,7 @@ pub fn store_properties<
     modify_json(&file, |previous_data: &mut Option<S>| {
         match previous_data {
             Some(previous_data) => {
-                // HACK: Find how to handle case where simultaneous writing happens. What is the expected result
-                // Overwrite the data for now
+                // Overwrites data
                 *previous_data = metadata.clone();
             }
             None => *previous_data = Some(metadata.clone()),
