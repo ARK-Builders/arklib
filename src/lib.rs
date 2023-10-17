@@ -24,6 +24,7 @@ pub const ARK_FOLDER: &str = ".ark";
 // must not be lost (user data)
 pub const STATS_FOLDER: &str = "stats";
 pub const FAVORITES_FILE: &str = "favorites";
+pub const DEVICE_ID: &str = "device";
 
 // User-defined data
 pub const TAG_STORAGE_FILE: &str = "user/tags";

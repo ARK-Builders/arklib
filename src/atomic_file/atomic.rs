@@ -94,15 +94,16 @@ pub struct AtomicFile {
     prefix: String,
 }
 
-fn parse_version(filename: &std::ffi::OsStr) -> Option<usize> {
-    let filename = filename.to_str()?;
-    let (_, version) = filename.rsplit_once('.')?;
+fn parse_version(filename: Option<&str>) -> Option<usize> {
+    let (_, version) = filename?.rsplit_once('.')?;
     version.parse().ok()
 }
 
 impl AtomicFile {
     pub fn new(path: impl Into<PathBuf>) -> crate::Result<Self> {
         let directory = path.into();
+        // Should assure transfert on internet is safe before sending files containing
+        // this machine_id on the prefix
         let machine_id = machine_uid::get()?;
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
@@ -116,14 +117,41 @@ impl AtomicFile {
         Ok(Self { directory, prefix })
     }
 
-    fn latest_version(&self) -> Result<usize> {
-        let mut max_version = 0;
-        for entry in fs::read_dir(&self.directory)? {
-            if let Some(version) = parse_version(&entry?.file_name()) {
-                max_version = std::cmp::max(max_version, version);
-            }
-        }
-        Ok(max_version)
+    /// Return a vec of files with latest version and the latest version. Multiples files can be found if they comes from different sources.
+    /// For example one from cellphone and one from computer can both a a version 2.
+    fn latest_version(&self) -> Result<(Vec<ReadOnlyFile>, usize)> {
+        let files_iterator = fs::read_dir(&self.directory)?.flatten();
+        let (files, version) = files_iterator.into_iter().fold(
+            (vec![], 0),
+            |(mut files, mut max_version), entry| {
+                let filename = entry.file_name();
+                if let Some(version) = parse_version(filename.to_str()) {
+                    // It's possible to have same version for two files coming from different machines
+                    // Add this files to the result
+                    if version >= max_version {
+                        let read_only = ReadOnlyFile {
+                            version,
+                            path: entry.path(),
+                        };
+                        files.push(read_only);
+                        max_version = version;
+                    }
+                }
+                (files, max_version)
+            },
+        );
+        let files = files
+            .into_iter()
+            .filter_map(|file| {
+                let file_version = parse_version(file.path.to_str())?;
+                if file_version == version {
+                    Some(file)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok((files, version))
     }
 
     fn path(&self, version: usize) -> PathBuf {
@@ -132,9 +160,35 @@ impl AtomicFile {
     }
 
     pub fn load(&self) -> Result<ReadOnlyFile> {
-        let version = self.latest_version()?;
-        let path = self.path(version);
-        Ok(ReadOnlyFile { version, path })
+        let (mut files, version) = self.latest_version()?;
+        let file = match files.len() {
+            0 => ReadOnlyFile {
+                version,
+                path: self.path(version),
+            },
+            1 => files.remove(0),
+            _ => {
+                log::warn!(
+                    "There is multiple files with the version {version}"
+                );
+                files
+                    .into_iter()
+                    .find(|file| {
+                        if let Some(path) = file.path.to_str() {
+                            path.contains(&self.prefix)
+                        } else {
+                            false
+                        }
+                    })
+                    .ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::NotFound,
+                            "File not found with correct version",
+                        )
+                    })?
+            }
+        };
+        Ok(file)
     }
 
     pub fn make_temp(&self) -> Result<TmpFile> {
@@ -158,7 +212,7 @@ impl AtomicFile {
         let new_path = self.path(current.version + 1);
         (new.file).sync_data()?;
         // Just to check if current.version is still the latest_version
-        let latest_version = self.latest_version()?;
+        let (_, latest_version) = self.latest_version()?;
         if latest_version > current.version {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
@@ -191,7 +245,9 @@ impl AtomicFile {
         let mut deleted = 0;
         if let Ok(iterator) = fs::read_dir(&self.directory) {
             for entry in iterator.flatten() {
-                if let Some(file_version) = parse_version(&entry.file_name()) {
+                if let Some(file_version) =
+                    parse_version(entry.file_name().to_str())
+                {
                     if file_version + MAX_VERSION_FILES - 1 <= version
                         && fs::remove_file(entry.path()).is_ok()
                     {
@@ -228,5 +284,35 @@ mod tests {
         // Check the number of files
         let version_files = fs::read_dir(&root).unwrap().count();
         assert_eq!(version_files, MAX_VERSION_FILES);
+    }
+
+    #[test]
+    fn mutliples_version_files() {
+        let dir = TempDir::new("multiples_version").unwrap();
+        let root = dir.path();
+        let file = AtomicFile::new(&root).unwrap();
+        let temp = file.make_temp().unwrap();
+        let current = file.load().unwrap();
+        let current_machine = format!("Content from current machine");
+        (&temp)
+            .write_all(&current_machine.as_bytes())
+            .unwrap();
+        file.compare_and_swap(&current, temp).unwrap();
+        // Other machine file (renamed on purpose to validate test)
+        let current = file.load().unwrap();
+        let other_machine = format!("Content from Cellphone");
+        let temp = file.make_temp().unwrap();
+        (&temp)
+            .write_all(&other_machine.as_bytes())
+            .unwrap();
+        file.compare_and_swap(&current, temp).unwrap();
+        let version_2_path = file.path(2);
+        let rename_path =
+            root.join(format!("{}_cellphoneId.1", root.display()));
+        std::fs::rename(version_2_path, rename_path).unwrap();
+        // We should take content from current machine
+        let current = file.load().unwrap();
+        let content = current.read_to_string().unwrap();
+        assert_eq!(content, current_machine);
     }
 }
