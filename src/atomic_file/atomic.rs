@@ -118,26 +118,26 @@ impl AtomicFile {
     }
 
     /// Return a vec of files with latest version and the latest version. Multiples files can be found if they comes from different sources.
-    /// For example one from cellphone and one from computer can both a a version 2.
+    /// For example one from cellphone and one from computer can both at version 2.
     fn latest_version(&self) -> Result<(Vec<ReadOnlyFile>, usize)> {
         let files_iterator = fs::read_dir(&self.directory)?.flatten();
         let (files, version) = files_iterator.into_iter().fold(
             (vec![], 0),
-            |(mut files, mut max_version), entry| {
+            |(mut files, mut current_max_version), entry| {
                 let filename = entry.file_name();
                 if let Some(version) = parse_version(filename.to_str()) {
                     // It's possible to have same version for two files coming from different machines
                     // Add this files to the result
-                    if version >= max_version {
+                    if version >= current_max_version {
                         let read_only = ReadOnlyFile {
                             version,
                             path: entry.path(),
                         };
                         files.push(read_only);
-                        max_version = version;
+                        current_max_version = version;
                     }
                 }
-                (files, max_version)
+                (files, current_max_version)
             },
         );
         let files = files
@@ -263,6 +263,7 @@ impl AtomicFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::io::Write;
     use tempdir::TempDir;
 
@@ -309,10 +310,58 @@ mod tests {
         let version_2_path = file.path(2);
         let rename_path =
             root.join(format!("{}_cellphoneId.1", root.display()));
-        std::fs::rename(version_2_path, rename_path).unwrap();
+        fs::rename(version_2_path, rename_path).unwrap();
         // We should take content from current machine
         let current = file.load().unwrap();
         let content = current.read_to_string().unwrap();
         assert_eq!(content, current_machine);
+    }
+
+    #[rstest]
+    #[case(3, &[1, 3], "case_1")]
+    #[case(5, &[2, 4], "case_2")]
+    #[case(10, &[3, 5, 7, 9, 10], "case_3")]
+    #[case(15, &[5, 14, 15], "case_4")]
+    fn latest_version(
+        #[case] versions: usize,
+        #[case] cellphone_versions: &[usize],
+        #[case] temp_name: &str,
+    ) {
+        // Create the files without atmic to handles files names
+        // let versions = 10;
+        // let cellphone_versions = &[3, 5, 7, 9, 10];
+        let dir = TempDir::new(temp_name).unwrap();
+        let root = dir.path();
+        // let root = PathBuf::from("./latest_version");
+        let file = AtomicFile::new(&root).unwrap();
+        let current_machine = machine_uid::get().unwrap();
+        for version in 0..versions {
+            let file_path = root.join(format!(
+                "{}_{current_machine}.{}",
+                &file.prefix,
+                version + 1
+            ));
+            let mut file = fs::File::create(file_path).unwrap();
+            let content =
+                format!("Version {} on {current_machine}", version + 1);
+            file.write_all(content.as_bytes()).unwrap();
+        }
+        // Write other machine files
+        for cellphone_version in cellphone_versions {
+            let file_path = root.join(format!(
+                "{}_cellphone.{cellphone_version}",
+                &file.prefix
+            ));
+            let mut file = fs::File::create(file_path).unwrap();
+            let content = format!("Version {cellphone_version} on cellphone");
+            file.write_all(content.as_bytes()).unwrap();
+        }
+        assert_eq!(file.latest_version().unwrap().1, versions);
+        let latest = file.load().unwrap();
+        let latest_content = latest.read_to_string().unwrap();
+        assert_eq!(
+            latest_content,
+            format!("Version {} on {current_machine}", versions)
+        );
     }
 }
