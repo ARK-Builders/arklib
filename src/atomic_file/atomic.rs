@@ -117,8 +117,10 @@ impl AtomicFile {
         Ok(Self { directory, prefix })
     }
 
-    /// Return a vec of files with latest version and the latest version. Multiples files can be found if they comes from different sources.
-    /// For example one from cellphone and one from computer can both at version 2.
+    /// Return the latest version together with vector of the
+    /// files matching this version. Multiple files for the same version
+    /// can appear due to usage of file syncronization. Different devices
+    /// can create same version simultaneously.
     fn latest_version(&self) -> Result<(Vec<ReadOnlyFile>, usize)> {
         let files_iterator = fs::read_dir(&self.directory)?.flatten();
         let (files, version) = files_iterator.into_iter().fold(
