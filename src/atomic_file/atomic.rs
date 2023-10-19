@@ -102,8 +102,9 @@ fn parse_version(filename: Option<&str>) -> Option<usize> {
 impl AtomicFile {
     pub fn new(path: impl Into<PathBuf>) -> crate::Result<Self> {
         let directory = path.into();
-        // Should assure transfert on internet is safe before sending files containing
-        // this machine_id on the prefix
+        // This UID must be treated as confidential information.
+        // Depending on network transport used to sync the files (if any),
+        // it can leak to an unauthorized party.
         let machine_id = machine_uid::get()?;
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
