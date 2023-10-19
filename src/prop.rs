@@ -7,8 +7,6 @@ use std::path::Path;
 use crate::id::ResourceId;
 use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 
-/// Dynamic metadata: stored as JSON and
-/// interpreted differently depending on kind of a resource
 pub fn store_properties<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
