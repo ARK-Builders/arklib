@@ -331,30 +331,24 @@ mod tests {
         #[case] temp_name: &str,
     ) {
         // Create the files without atmic to handles files names
-        // let versions = 10;
-        // let cellphone_versions = &[3, 5, 7, 9, 10];
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        // let root = PathBuf::from("./latest_version");
         let file = AtomicFile::new(&root).unwrap();
         let current_machine = machine_uid::get().unwrap();
         for version in 0..versions {
-            let file_path = root.join(format!(
-                "{}_{current_machine}.{}",
-                &file.prefix,
-                version + 1
-            ));
+            let file_path =
+                root.join(format!("{}{}", &file.prefix, version + 1));
             let mut file = fs::File::create(file_path).unwrap();
             let content =
                 format!("Version {} on {current_machine}", version + 1);
             file.write_all(content.as_bytes()).unwrap();
         }
         // Write other machine files
+        let mut path = file.prefix.split('_');
+        let path = path.next().unwrap();
         for cellphone_version in cellphone_versions {
-            let file_path = root.join(format!(
-                "{}_cellphone.{cellphone_version}",
-                &file.prefix
-            ));
+            let file_path =
+                root.join(format!("{path}_cellphone.{cellphone_version}"));
             let mut file = fs::File::create(file_path).unwrap();
             let content = format!("Version {cellphone_version} on cellphone");
             file.write_all(content.as_bytes()).unwrap();

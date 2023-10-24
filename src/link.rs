@@ -344,7 +344,7 @@ async fn test_create_link_file() {
             Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
                 .unwrap();
         assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
-        let link = Link::load(root.clone(), path.as_path()).unwrap();
+        let link = Link::load(root, path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.prop.desc.unwrap(), "desc");
         assert_eq!(link.prop.title, "title");
