@@ -1,9 +1,11 @@
 use super::atomic_file::{modify_json, AtomicFile};
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
+use crate::atomic_file::merge_values;
 use crate::id::ResourceId;
 use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 
@@ -21,40 +23,16 @@ pub fn store_properties<
             .join(PROPERTIES_STORAGE_FOLDER)
             .join(id.to_string()),
     )?;
-    modify_json(&file, |previous_data: &mut Option<S>| match previous_data {
-        Some(previous_data) => match serde_json::to_value(&previous_data) {
-            Ok(mut previous_object) => {
-                // may return error if data in file is not an object
-                let previous_value = previous_object.as_object_mut().unwrap();
-                let mut new_object = serde_json::to_value(&properties).unwrap();
-                // May return error if properties is not an object
-                let new_object = new_object.as_object_mut().unwrap();
-                for (key, value) in new_object {
-                    if previous_value.contains_key(key) {
-                        let previous_saved = previous_value.get(key).unwrap();
-                        let new_data = match previous_saved {
-                            serde_json::Value::Array(data) => {
-                                let mut data = data.to_vec();
-                                data.push(value.clone());
-                                serde_json::Value::Array(data)
-                            }
-                            _ => serde_json::Value::Array(vec![
-                                previous_saved.clone(),
-                                value.clone(),
-                            ]),
-                        };
-                        previous_value.insert(key.clone(), new_data);
-                    } else {
-                        previous_value.insert(
-                            key.clone(),
-                            serde_json::Value::Array(vec![value.clone()]),
-                        );
-                    }
-                }
+    let value = serde_json::to_value(properties)?;
+    modify_json(&file, |current_data: &mut Option<Value>| {
+        match current_data {
+            Some(old_data) => {
+                // Should not failed unless serialize failed which should never happen
+                let old_value = serde_json::to_value(old_data).unwrap();
+                *current_data = Some(merge_values(old_value, value.clone()));
             }
-            Err(_) => *previous_data = properties.clone(),
-        },
-        None => *previous_data = Some(properties.clone()),
+            None => *current_data = Some(value.clone()),
+        }
     })?;
     Ok(())
 }

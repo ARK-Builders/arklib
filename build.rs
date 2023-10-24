@@ -41,9 +41,9 @@ fn main() {
         }
         OperatingSystem::Ios => name.push("ios"),
         OperatingSystem::MacOSX {
-            major: 11,
-            minor: 0,
-            patch: 0,
+            major: _,
+            minor: _,
+            patch: _,
         } => name.push("mac"),
         _ => {}
     }

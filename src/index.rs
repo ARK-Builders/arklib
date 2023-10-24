@@ -564,8 +564,11 @@ mod tests {
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::fs::File;
-    #[cfg(target_os = "unix")]
-    use std::os::unix::fs::{Permissions, PermissionsExt};
+    #[cfg(target_os = "linux")]
+    use std::fs::Permissions;
+    #[cfg(target_os = "linux")]
+    use std::os::unix::fs::PermissionsExt;
+
     use std::path::PathBuf;
     use std::time::SystemTime;
     use uuid::Uuid;
@@ -787,7 +790,7 @@ mod tests {
 
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
-            #[cfg(target_os = "unix")]
+            #[cfg(target_os = "linux")]
             file.set_permissions(Permissions::from_mode(0o222))
                 .expect("Should be fine");
 
