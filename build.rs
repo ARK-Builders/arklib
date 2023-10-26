@@ -40,11 +40,9 @@ fn main() {
             }
         }
         OperatingSystem::Ios => name.push("ios"),
-        OperatingSystem::MacOSX {
-            major: 11,
-            minor: 0,
-            patch: 0,
-        } => name.push("mac"),
+        OperatingSystem::MacOSX { .. } | OperatingSystem::Darwin => {
+            name.push("mac")
+        }
         _ => {}
     }
 
@@ -80,13 +78,10 @@ fn main() {
         )
         .unwrap(),
         OperatingSystem::Ios
-        | OperatingSystem::MacOSX {
-            major: 11,
-            minor: 0,
-            patch: 0,
-        } => fs_extra::file::move_file(
+        | OperatingSystem::MacOSX { .. }
+        | OperatingSystem::Darwin => fs_extra::file::move_file(
             PathBuf::from(&out_dir)
-                .join("bin")
+                .join("lib")
                 .join("libpdfium.dylib"),
             PathBuf::from(&out_dir).join("libpdfium.dylib"),
             &CopyOptions::new(),
@@ -101,5 +96,4 @@ fn main() {
         )
         .unwrap(),
     };
-    println!("cargo:rerun-if-changed=build.rs");
 }
