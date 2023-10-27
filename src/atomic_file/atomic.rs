@@ -122,7 +122,7 @@ impl AtomicFile {
     /// files matching this version. Multiple files for the same version
     /// can appear due to usage of file syncronization. Different devices
     /// can create same version simultaneously.
-    fn latest_version(&self) -> Result<(Vec<ReadOnlyFile>, usize)> {
+    fn latest_version(&self) -> Result<(usize, Vec<ReadOnlyFile>)> {
         let files_iterator = fs::read_dir(&self.directory)?.flatten();
         let (files, version) = files_iterator.into_iter().fold(
             (vec![], 0),
@@ -154,7 +154,7 @@ impl AtomicFile {
                 }
             })
             .collect();
-        Ok((files, version))
+        Ok((version, files))
     }
 
     fn path(&self, version: usize) -> PathBuf {
@@ -163,7 +163,7 @@ impl AtomicFile {
     }
 
     pub fn load(&self) -> Result<ReadOnlyFile> {
-        let (mut files, version) = self.latest_version()?;
+        let (version, mut files) = self.latest_version()?;
         let file = match files.len() {
             0 => ReadOnlyFile {
                 version,
@@ -215,7 +215,7 @@ impl AtomicFile {
         let new_path = self.path(current.version + 1);
         (new.file).sync_data()?;
         // Just to check if current.version is still the latest_version
-        let (_, latest_version) = self.latest_version()?;
+        let (latest_version, _) = self.latest_version()?;
         if latest_version > current.version {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
@@ -333,18 +333,18 @@ mod tests {
         // Create the files without atmic to handles files names
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        let file = AtomicFile::new(&root).unwrap();
         let current_machine = machine_uid::get().unwrap();
+        let file = AtomicFile::new(&root).unwrap();
+        let prefix = &file.prefix;
         for version in 0..versions {
-            let file_path =
-                root.join(format!("{}{}", &file.prefix, version + 1));
+            let file_path = root.join(format!("{}{}", prefix, version + 1));
             let mut file = fs::File::create(file_path).unwrap();
             let content =
                 format!("Version {} on {current_machine}", version + 1);
             file.write_all(content.as_bytes()).unwrap();
         }
         // Write other machine files
-        let mut path = file.prefix.split('_');
+        let mut path = prefix.split('_');
         let path = path.next().unwrap();
         for cellphone_version in cellphone_versions {
             let file_path =
@@ -353,7 +353,7 @@ mod tests {
             let content = format!("Version {cellphone_version} on cellphone");
             file.write_all(content.as_bytes()).unwrap();
         }
-        assert_eq!(file.latest_version().unwrap().1, versions);
+        assert_eq!(file.latest_version().unwrap().0, versions);
         let latest = file.load().unwrap();
         let latest_content = latest.read_to_string().unwrap();
         assert_eq!(

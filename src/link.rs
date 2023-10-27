@@ -1,5 +1,6 @@
 use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
+use crate::prop::store_properties;
 use crate::{
     prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
     LINK_STORAGE_FOLDER, METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
@@ -97,20 +98,7 @@ impl Link {
         link_file.compare_and_swap(&current_link, tmp)?;
 
         //User defined properties
-        let prop_folder = base_dir
-            .join(PROPERTIES_STORAGE_FOLDER)
-            .join(&id_string);
-        let prop_file = AtomicFile::new(prop_folder)?;
-        modify_json(&prop_file, |data: &mut Option<Properties>| {
-            let properties = self.prop.clone();
-            match data {
-                Some(data) => {
-                    // Hack currently overwrites
-                    *data = properties;
-                }
-                None => *data = Some(properties),
-            }
-        })?;
+        store_properties(&root, id, &self.prop)?;
 
         // Generated data
         if let Ok(data) = self.get_preview().await {
@@ -350,13 +338,10 @@ async fn test_create_link_file() {
         assert_eq!(link.prop.title, "title");
 
         let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
-        println!("resource: {}, {}", id.crc32, id.data_size);
-
         let path = Path::new(root)
             .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
             .join(id.to_string());
-        println!("Path: {} exist: {}", path.display(), path.exists());
         if path.exists() {
             assert_eq!(save_preview, true)
         } else {

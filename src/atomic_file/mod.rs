@@ -98,6 +98,7 @@ mod merging {
             (Value::Null, new) => new,
             (old, new) => {
                 if std::mem::discriminant(&old) == std::mem::discriminant(&new)
+                    && old != new
                 {
                     json!([old, new])
                 } else {
@@ -153,6 +154,7 @@ mod merging {
                             // Only create array if same type
                             if std::mem::discriminant(&old)
                                 == std::mem::discriminant(&new)
+                                && old != new
                             {
                                 origin.insert(key, json!([old, new]));
                             } else {
@@ -188,6 +190,31 @@ mod merging {
                 .collect();
             filtered.extend(new);
             Value::Array(filtered)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use rstest::rstest;
+
+        #[rstest]
+        #[case(json!("old"), json!("new"), json!(["old", "new"]))]
+        #[case(json!(["old1", "old2"]), json!("new"), json!(["old1", "old2", "new"]))]
+        #[case(json!("same"), json!("same"), json!("same"))]
+        #[case(json!({
+            "a": ["An array"],
+            "b": 1,
+        }), json!({"c": "A string"}), json!({"a": ["An array"], "b": 1, "c": "A string"}))]
+        #[case(json!({"a": "Object"}), json!("A string"), json!({"a": "Object"}))]
+        #[case(json!("Old string"), json!({"a": 1}), json!("Old string"))]
+        fn merging_as_expected(
+            #[case] old: Value,
+            #[case] new: Value,
+            #[case] expected: Value,
+        ) {
+            let merged = merge_values(old, new);
+            assert_eq!(merged, expected);
         }
     }
 }

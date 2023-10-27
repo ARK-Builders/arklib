@@ -15,7 +15,7 @@ pub fn store_properties<
 >(
     root: P,
     id: ResourceId,
-    properties: S,
+    properties: &S,
 ) -> Result<()> {
     let file = AtomicFile::new(
         root.as_ref()
@@ -23,15 +23,15 @@ pub fn store_properties<
             .join(PROPERTIES_STORAGE_FOLDER)
             .join(id.to_string()),
     )?;
-    let value = serde_json::to_value(properties)?;
     modify_json(&file, |current_data: &mut Option<Value>| {
+        let value = serde_json::to_value(properties).unwrap();
         match current_data {
             Some(old_data) => {
                 // Should not failed unless serialize failed which should never happen
                 let old_value = serde_json::to_value(old_data).unwrap();
-                *current_data = Some(merge_values(old_value, value.clone()));
+                *current_data = Some(merge_values(old_value, value));
             }
-            None => *current_data = Some(value.clone()),
+            None => *current_data = Some(value),
         }
     })?;
     Ok(())
@@ -84,7 +84,7 @@ mod tests {
         prop.insert("abc".to_string(), "def".to_string());
         prop.insert("xyz".to_string(), "123".to_string());
 
-        store_properties(root, id, prop.clone()).unwrap();
+        store_properties(root, id, &prop).unwrap();
 
         let bytes = load_raw_properties(root, id).unwrap();
         let prop2: TestProperties = serde_json::from_slice(&bytes).unwrap();
