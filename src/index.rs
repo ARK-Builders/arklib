@@ -82,47 +82,21 @@ impl ResourceIndex {
             root: root_path.clone(),
         };
 
-        // We should not return early in case of errors
+        // We should not return early in case of missing files
         for line in BufReader::new(file).lines() {
             if let Ok(entry) = line {
                 let mut parts = entry.split(' ');
 
-                let modified: SystemTime = {
-                    match parts.next() {
-                        Some(millis) => match millis.parse() {
-                            Ok(millis) => {
-                                UNIX_EPOCH.add(Duration::from_millis(millis))
-                            }
-                            Err(_) => {
-                                log::warn!("Can't parse {millis} to u64");
-                                continue;
-                            }
-                        },
-                        None => {
-                            log::warn!("Missing timestamp from {entry}");
-                            continue;
-                        }
-                    }
+                let modified = {
+                    let str = parts.next().ok_or(ArklibError::Parse)?;
+                    UNIX_EPOCH.add(Duration::from_millis(
+                        str.parse().map_err(|_| ArklibError::Parse)?,
+                    ))
                 };
 
-                let id: ResourceId = {
-                    match parts.next() {
-                        Some(str) => match ResourceId::from_str(str) {
-                            Ok(id) => id,
-                            Err(_) => {
-                                log::warn!(
-                                    "Can't parse {str} to a RessourceId"
-                                );
-                                continue;
-                            }
-                        },
-                        None => {
-                            log::warn!(
-                                "Missing ressource id part on the line {entry}"
-                            );
-                            continue;
-                        }
-                    }
+                let id = {
+                    let str = parts.next().ok_or(ArklibError::Parse)?;
+                    ResourceId::from_str(str)?
                 };
 
                 let path: String =
