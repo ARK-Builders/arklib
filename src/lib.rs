@@ -4,13 +4,15 @@ extern crate lazy_static;
 extern crate canonical_path;
 pub mod errors;
 pub use errors::{ArklibError, Result};
-mod atomic_file;
+mod atomic;
 pub mod id;
 pub mod link;
 pub mod pdf;
-pub use atomic_file::{modify, modify_json, AtomicFile};
+pub use atomic::{modify, modify_json, AtomicFile};
 pub mod index;
-pub mod prop;
+mod storage;
+mod util;
+
 use index::ResourceIndex;
 
 use std::collections::HashMap;
@@ -30,7 +32,6 @@ pub const DEVICE_ID: &str = "device";
 pub const TAG_STORAGE_FILE: &str = "user/tags";
 pub const SCORE_STORAGE_FILE: &str = "user/scores";
 pub const PROPERTIES_STORAGE_FOLDER: &str = "user/properties";
-pub const LINK_STORAGE_FOLDER: &str = "user/links";
 
 // Generated data
 pub const INDEX_PATH: &str = "index";

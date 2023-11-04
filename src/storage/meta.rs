@@ -1,51 +1,51 @@
-use super::atomic_file::{modify_json, AtomicFile};
+use crate::atomic::{modify_json, AtomicFile};
 use serde::{de::DeserializeOwned, Serialize};
-use serde_json::Value;
 use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use crate::atomic_file::merge_values;
 use crate::id::ResourceId;
-use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
+use crate::{Result, ARK_FOLDER, METADATA_STORAGE_FOLDER};
 
-pub fn store_properties<
+pub fn store_metadata<
     S: Serialize + DeserializeOwned + Clone + Debug,
     P: AsRef<Path>,
 >(
     root: P,
     id: ResourceId,
-    properties: &S,
+    metadata: &S,
 ) -> Result<()> {
     let file = AtomicFile::new(
         root.as_ref()
             .join(ARK_FOLDER)
-            .join(PROPERTIES_STORAGE_FOLDER)
+            .join(METADATA_STORAGE_FOLDER)
             .join(id.to_string()),
     )?;
-    modify_json(&file, |current_data: &mut Option<Value>| {
-        let value = serde_json::to_value(properties).unwrap();
-        match current_data {
-            Some(old_data) => {
-                // Should not failed unless serialize failed which should never happen
-                let old_value = serde_json::to_value(old_data).unwrap();
-                *current_data = Some(merge_values(old_value, value));
+    modify_json(&file, |current_meta: &mut Option<S>| {
+        let new_meta = metadata.clone();
+        match current_meta {
+            Some(file_data) => {
+                // This is fine because generated metadata must always
+                // be generated in same way on any device.
+                *file_data = new_meta;
+                // Different versions of the lib should
+                // not be used on synced devices.
             }
-            None => *current_data = Some(value),
+            None => *current_meta = Some(new_meta),
         }
     })?;
     Ok(())
 }
 
 /// The file must exist if this method is called
-pub fn load_raw_properties<P: AsRef<Path>>(
+pub fn load_raw_metadata<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
 ) -> Result<Vec<u8>> {
     let storage = root
         .as_ref()
         .join(ARK_FOLDER)
-        .join(PROPERTIES_STORAGE_FOLDER)
+        .join(METADATA_STORAGE_FOLDER)
         .join(id.to_string());
     let file = AtomicFile::new(storage)?;
     let read_file = file.load()?;
@@ -67,7 +67,7 @@ mod tests {
     use tempdir::TempDir;
 
     use std::collections::HashMap;
-    type TestProperties = HashMap<String, String>;
+    type TestMetadata = HashMap<String, String>;
 
     #[test]
     fn test_store_and_load() {
@@ -80,14 +80,14 @@ mod tests {
             data_size: 1,
         };
 
-        let mut prop = TestProperties::new();
-        prop.insert("abc".to_string(), "def".to_string());
-        prop.insert("xyz".to_string(), "123".to_string());
+        let mut meta = TestMetadata::new();
+        meta.insert("abc".to_string(), "def".to_string());
+        meta.insert("xyz".to_string(), "123".to_string());
 
-        store_properties(root, id, &prop).unwrap();
+        store_metadata(root, id, &meta).unwrap();
 
-        let bytes = load_raw_properties(root, id).unwrap();
-        let prop2: TestProperties = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(prop, prop2);
+        let bytes = load_raw_metadata(root, id).unwrap();
+        let prop2: TestMetadata = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(meta, prop2);
     }
 }

@@ -206,12 +206,11 @@ impl AtomicFile {
     /// version was not the same as `current` and the operation must be retried
     /// with a fresher version of the file. Any other I/O error is forwarded as
     /// well.
-    /// Return the number of old file deleted after swapping
     pub fn compare_and_swap(
         &self,
         current: &ReadOnlyFile,
         new: TmpFile,
-    ) -> Result<usize> {
+    ) -> Result<()> {
         let new_path = self.path(current.version + 1);
         (new.file).sync_data()?;
         // Just to check if current.version is still the latest_version
@@ -240,7 +239,10 @@ impl AtomicFile {
             #[cfg(not(target_os = "unix"))]
             Err(err)?;
         }
-        Ok(self.prune_old_versions(latest_version))
+
+        let number_of_removed = self.prune_old_versions(latest_version);
+        log::debug!("pruned {} old files", number_of_removed);
+        Ok(())
     }
 
     /// Return the number of files deleted

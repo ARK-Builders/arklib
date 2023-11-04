@@ -1,10 +1,9 @@
-use crate::atomic_file::modify_json;
 use crate::id::ResourceId;
-use crate::prop::store_properties;
+use crate::storage::meta::store_metadata;
+use crate::storage::prop::store_properties;
 use crate::{
-    prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
-    LINK_STORAGE_FOLDER, METADATA_STORAGE_FOLDER, PREVIEWS_STORAGE_FOLDER,
-    PROPERTIES_STORAGE_FOLDER,
+    storage::prop::load_raw_properties, AtomicFile, Result, ARK_FOLDER,
+    PREVIEWS_STORAGE_FOLDER, PROPERTIES_STORAGE_FOLDER,
 };
 use reqwest::header::HeaderValue;
 use scraper::{Html, Selector};
@@ -87,10 +86,9 @@ impl Link {
     ) -> Result<()> {
         let id = self.id()?;
         let id_string = id.to_string();
-        let base_dir = root.as_ref().join(ARK_FOLDER);
-        let folder = base_dir
-            .join(LINK_STORAGE_FOLDER)
-            .join(&id_string);
+
+        // Resources are stored in the folder chosen by user
+        let folder = root.as_ref().join(&id_string);
         let link_file = AtomicFile::new(&folder)?;
         let tmp = link_file.make_temp()?;
         (&tmp).write_all(self.url.as_str().as_bytes())?;
@@ -101,24 +99,12 @@ impl Link {
         store_properties(&root, id, &self.prop)?;
 
         // Generated data
-        if let Ok(data) = self.get_preview().await {
-            let graph_folder = base_dir
-                .join(METADATA_STORAGE_FOLDER)
-                .join(&id_string);
-            let file = AtomicFile::new(graph_folder)?;
-            modify_json(&file, |file_data: &mut Option<OpenGraph>| {
-                let graph = data.clone();
-                println!("Trying to save: {with_preview} with {graph:?}");
-                match file_data {
-                    Some(file_data) => {
-                        // Hack currently overwrite
-                        *file_data = graph;
-                    }
-                    None => *file_data = Some(graph),
-                }
-            })?;
+        if let Ok(graph) = self.get_preview().await {
+            log::debug!("Trying to save: {with_preview} with {graph:?}");
+
+            store_metadata(&root, id, &graph)?;
             if with_preview {
-                if let Some(preview_data) = data.fetch_image().await {
+                if let Some(preview_data) = graph.fetch_image().await {
                     self.save_preview(root, preview_data, &id)?;
                 }
             }
@@ -316,13 +302,14 @@ async fn test_create_link_file() {
     let root = dir.path();
     println!("temporary root: {}", root.display());
     let url = Url::parse("https://kaydee.net/blog/open-graph-image/").unwrap();
-    let link =
-        Link::new(url, String::from("title"), Some(String::from("desc")));
+    let link = Link::new(
+        url,
+        String::from("test_title"),
+        Some(String::from("test_desc")),
+    );
 
-    let path = root
-        .join(ARK_FOLDER)
-        .join(LINK_STORAGE_FOLDER)
-        .join(link.id().unwrap().to_string());
+    // Resources are stored in the folder chosen by user
+    let path = root.join(link.id().unwrap().to_string());
     let file = AtomicFile::new(&path).unwrap();
     for save_preview in [false, true] {
         link.save(root, save_preview).await.unwrap();
@@ -334,8 +321,8 @@ async fn test_create_link_file() {
         assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
         let link = Link::load(root, path.as_path()).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
-        assert_eq!(link.prop.desc.unwrap(), "desc");
-        assert_eq!(link.prop.title, "title");
+        assert_eq!(link.prop.desc.unwrap(), "test_desc");
+        assert_eq!(link.prop.title, "test_title");
 
         let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
         let path = Path::new(root)
