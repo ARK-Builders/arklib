@@ -82,34 +82,32 @@ impl ResourceIndex {
         };
 
         // We should not return early in case of missing files
-        for line in BufReader::new(file).lines() {
-            if let Ok(entry) = line {
-                let mut parts = entry.split(' ');
+        for line in BufReader::new(file).lines().flatten() {
+            let mut parts = line.split(' ');
 
-                let modified = {
-                    let str = parts.next().ok_or(ArklibError::Parse)?;
-                    UNIX_EPOCH.add(Duration::from_millis(
-                        str.parse().map_err(|_| ArklibError::Parse)?,
-                    ))
-                };
+            let modified = {
+                let str = parts.next().ok_or(ArklibError::Parse)?;
+                UNIX_EPOCH.add(Duration::from_millis(
+                    str.parse().map_err(|_| ArklibError::Parse)?,
+                ))
+            };
 
-                let id = {
-                    let str = parts.next().ok_or(ArklibError::Parse)?;
-                    ResourceId::from_str(str)?
-                };
+            let id = {
+                let str = parts.next().ok_or(ArklibError::Parse)?;
+                ResourceId::from_str(str)?
+            };
 
-                let path: String =
-                    itertools::Itertools::intersperse(parts, " ").collect();
-                let path: PathBuf = root_path.join(Path::new(&path));
-                match CanonicalPathBuf::canonicalize(&path) {
-                    Ok(path) => {
-                        log::trace!("[load] {} -> {}", id, path.display());
-                        index.insert_entry(path, IndexEntry { id, modified });
-                    }
-                    Err(_) => {
-                        log::warn!("File {} not found", path.display());
-                        continue;
-                    }
+            let path: String =
+                itertools::Itertools::intersperse(parts, " ").collect();
+            let path: PathBuf = root_path.join(Path::new(&path));
+            match CanonicalPathBuf::canonicalize(&path) {
+                Ok(path) => {
+                    log::trace!("[load] {} -> {}", id, path.display());
+                    index.insert_entry(path, IndexEntry { id, modified });
+                }
+                Err(_) => {
+                    log::warn!("File {} not found", path.display());
+                    continue;
                 }
             }
         }
