@@ -57,7 +57,7 @@ fn main() {
     }
     dbg!(&name);
 
-    let filename = name.join("-").to_string();
+    let filename = name.join("-");
     let url = format!(
         "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/{}/{}.tgz",
         PDFIUM_VERSION, filename

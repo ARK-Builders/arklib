@@ -2,16 +2,21 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate canonical_path;
+
 pub mod errors;
 pub use errors::{ArklibError, Result};
-mod atomic;
+
 pub mod id;
+pub mod index;
+
 pub mod link;
 pub mod pdf;
-pub use atomic::{modify, modify_json, AtomicFile};
-pub mod index;
+
+mod atomic;
 mod storage;
 mod util;
+
+pub use atomic::{modify, modify_json, AtomicFile};
 
 use index::ResourceIndex;
 

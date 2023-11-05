@@ -1,8 +1,9 @@
-mod atomic;
+mod file;
+
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Result, Write};
 
-pub use atomic::AtomicFile;
+pub use file::AtomicFile;
 
 pub fn modify(
     atomic_file: &AtomicFile,
