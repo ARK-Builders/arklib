@@ -11,7 +11,8 @@ fn main() {
     let t = env::var("TARGET").unwrap();
     let target = Triple::from_str(t.as_str()).unwrap();
     let out_dir = env::var_os("OUT_DIR").unwrap();
-
+    
+    println!("{}", target.operating_system);
     // Avoid duplicate download
     if !fs_extra::dir::ls(&out_dir, &HashSet::new())
         .unwrap()
@@ -45,6 +46,7 @@ fn main() {
             minor: _,
             patch: _,
         } => name.push("mac"),
+        OperatingSystem::Darwin => name.push("mac"),
         _ => {}
     }
 
@@ -81,10 +83,11 @@ fn main() {
         .unwrap(),
         OperatingSystem::Ios
         | OperatingSystem::MacOSX {
-            major: 11,
-            minor: 0,
-            patch: 0,
-        } => fs_extra::file::move_file(
+            major: _,
+            minor: _,
+            patch: _,
+        } 
+        | OperatingSystem::Darwin => fs_extra::file::move_file(
             PathBuf::from(&out_dir)
                 .join("bin")
                 .join("libpdfium.dylib"),
