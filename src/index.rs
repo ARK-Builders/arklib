@@ -344,14 +344,14 @@ impl ResourceIndex {
         old_id: ResourceId,
     ) -> Result<IndexUpdate> {
         log::debug!("Updating a single entry in the index");
-        
+
         if !path.as_ref().exists() {
-            return self.forget_id(old_id)
+            return self.forget_id(old_id);
         }
-        
+
         let canonical_path_buf = CanonicalPathBuf::canonicalize(path)?;
         let canonical_path = canonical_path_buf.as_canonical_path();
-        
+
         log::trace!(
             "[update] paths {:?} has id {:?}",
             canonical_path,
@@ -360,7 +360,8 @@ impl ResourceIndex {
 
         return match fs::metadata(canonical_path) {
             Err(_) => {
-                // updating the index after resource removal is a correct scenario
+                // updating the index after resource removal is a correct
+                // scenario
                 self.forget_path(canonical_path, old_id)
             }
             Ok(metadata) => {
@@ -380,21 +381,28 @@ impl ResourceIndex {
                                 log::warn!("path {:?} was modified but not its content", &canonical_path);
                             }
 
-                            // the caller must have ensured that the path was updated
+                            // the caller must have ensured that the path was
+                            // updated
                             return Err(ArklibError::Collision(
                                 "New content has the same id".into(),
                             ));
                         }
 
                         // new resource exists by the path
-                        self.forget_path(canonical_path, old_id).map(|mut update| {
-                            update
-                                .added
-                                .insert(canonical_path_buf.clone(), new_entry.id);
-                            self.insert_entry(canonical_path_buf, new_entry);
+                        self.forget_path(canonical_path, old_id).map(
+                            |mut update| {
+                                update.added.insert(
+                                    canonical_path_buf.clone(),
+                                    new_entry.id,
+                                );
+                                self.insert_entry(
+                                    canonical_path_buf,
+                                    new_entry,
+                                );
 
-                            update
-                        })
+                                update
+                            },
+                        )
                     }
                 }
             }
@@ -474,12 +482,20 @@ impl ResourceIndex {
             deleted,
         });
     }
-     
-    fn forget_id(
-        &mut self,
-        old_id: ResourceId,
-    ) -> Result<IndexUpdate> {
-        let old_path = self.path2id.drain().into_iter().filter_map(|(k,v)| if v.id == old_id {Some(k)} else {None}).collect_vec();
+
+    fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
+        let old_path = self
+            .path2id
+            .drain()
+            .into_iter()
+            .filter_map(|(k, v)| {
+                if v.id == old_id {
+                    Some(k)
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
         for p in old_path {
             self.path2id.remove(&p);
         }
@@ -587,8 +603,8 @@ fn is_hidden(entry: &DirEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::id::ResourceId;
-    use crate::ArklibError;
     use crate::index::{discover_paths, IndexEntry};
+    use crate::ArklibError;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::fs::{File, Permissions};
@@ -784,10 +800,13 @@ mod tests {
                 .expect("Should remove file successfully");
 
             let update = actual
-                .update_one(&file_path.clone(), ResourceId {
-                    data_size: FILE_SIZE_1,
-                    crc32: CRC32_1
-                })
+                .update_one(
+                    &file_path.clone(),
+                    ResourceId {
+                        data_size: FILE_SIZE_1,
+                        crc32: CRC32_1,
+                    },
+                )
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
@@ -846,12 +865,16 @@ mod tests {
                 data_size: 1,
                 crc32: 2,
             };
-            let result = actual.update_one(&missing_path, old_id).map(|i| i.deleted.clone().take(&old_id)).ok().flatten();
+            let result = actual
+                .update_one(&missing_path, old_id)
+                .map(|i| i.deleted.clone().take(&old_id))
+                .ok()
+                .flatten();
 
             assert_eq!(result, None);
         })
     }
-    
+
     #[test]
     fn should_not_index_empty_file() {
         run_test_and_clean_up(|path| {
