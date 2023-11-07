@@ -345,11 +345,8 @@ impl ResourceIndex {
     ) -> Result<IndexUpdate> {
         log::debug!("Updating a single entry in the index");
         
-        // the caller must have ensured that the path is exist
         if !path.as_ref().exists() {
-            return Err(ArklibError::Path(
-                "Path does not exist".into(),
-            ));
+            return self.forget_id(old_id)
         }
         
         let canonical_path_buf = CanonicalPathBuf::canonicalize(path)?;
@@ -469,6 +466,24 @@ impl ResourceIndex {
             self.id2path.remove(&old_id);
         }
 
+        let mut deleted = HashSet::new();
+        deleted.insert(old_id);
+
+        return Ok(IndexUpdate {
+            added: HashMap::new(),
+            deleted,
+        });
+    }
+     
+    fn forget_id(
+        &mut self,
+        old_id: ResourceId,
+    ) -> Result<IndexUpdate> {
+        let old_path = self.path2id.drain().into_iter().filter_map(|(k,v)| if v.id == old_id {Some(k)} else {None}).collect_vec();
+        for p in old_path {
+            self.path2id.remove(&p);
+        }
+        self.id2path.remove(&old_id);
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
 
@@ -765,11 +780,14 @@ mod tests {
 
             let mut file_path = path.clone();
             file_path.push(FILE_NAME_1);
-            std::fs::remove_file(file_path)
+            std::fs::remove_file(file_path.clone())
                 .expect("Should remove file successfully");
 
             let update = actual
-                .update_all()
+                .update_one(&file_path.clone(), ResourceId {
+                    data_size: FILE_SIZE_1,
+                    crc32: CRC32_1
+                })
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
@@ -824,12 +842,13 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let error = actual.update_one(&missing_path, ResourceId {
+            let old_id = ResourceId {
                 data_size: 1,
                 crc32: 2,
-            }).map_err(|e| e.to_string()).err();
+            };
+            let result = actual.update_one(&missing_path, old_id).map(|i| i.deleted.clone().take(&old_id)).ok().flatten();
 
-            assert_eq!(error, Some(String::from("Path error: Path does not exist")));
+            assert_eq!(result, None);
         })
     }
     
