@@ -871,7 +871,13 @@ mod tests {
                 .ok()
                 .flatten();
 
-            assert_eq!(result, None);
+            assert_eq!(
+                result,
+                Some(ResourceId {
+                    data_size: 1,
+                    crc32: 2,
+                })
+            );
         })
     }
 
