@@ -409,6 +409,32 @@ impl ResourceIndex {
         };
     }
 
+    pub fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
+        let old_path = self
+            .path2id
+            .drain()
+            .into_iter()
+            .filter_map(|(k, v)| {
+                if v.id == old_id {
+                    Some(k)
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
+        for p in old_path {
+            self.path2id.remove(&p);
+        }
+        self.id2path.remove(&old_id);
+        let mut deleted = HashSet::new();
+        deleted.insert(old_id);
+
+        return Ok(IndexUpdate {
+            added: HashMap::new(),
+            deleted,
+        });
+    }
+
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
         let id = entry.id;
@@ -474,32 +500,6 @@ impl ResourceIndex {
             self.id2path.remove(&old_id);
         }
 
-        let mut deleted = HashSet::new();
-        deleted.insert(old_id);
-
-        return Ok(IndexUpdate {
-            added: HashMap::new(),
-            deleted,
-        });
-    }
-
-    fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
-        let old_path = self
-            .path2id
-            .drain()
-            .into_iter()
-            .filter_map(|(k, v)| {
-                if v.id == old_id {
-                    Some(k)
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for p in old_path {
-            self.path2id.remove(&p);
-        }
-        self.id2path.remove(&old_id);
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
 
