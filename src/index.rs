@@ -1,4 +1,6 @@
 use anyhow::anyhow;
+use canonical_path::{CanonicalPath, CanonicalPathBuf};
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
 use std::io::{BufRead, BufReader, Write};
@@ -6,8 +8,6 @@ use std::ops::Add;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use itertools::Itertools;
-use canonical_path::{CanonicalPath, CanonicalPathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 use log;
