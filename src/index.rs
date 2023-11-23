@@ -361,7 +361,7 @@ impl ResourceIndex {
             self.path2id[canonical_path]
         );
 
-        return match fs::metadata(canonical_path) {
+        match fs::metadata(canonical_path) {
             Err(_) => {
                 // updating the index after resource removal is a correct
                 // scenario
@@ -409,14 +409,13 @@ impl ResourceIndex {
                     }
                 }
             }
-        };
+        }
     }
 
     pub fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
         let old_path = self
             .path2id
             .drain()
-            .into_iter()
             .filter_map(|(k, v)| {
                 if v.id == old_id {
                     Some(k)
@@ -432,10 +431,10 @@ impl ResourceIndex {
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
 
-        return Ok(IndexUpdate {
+        Ok(IndexUpdate {
             added: HashMap::new(),
             deleted,
-        });
+        })
     }
 
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
