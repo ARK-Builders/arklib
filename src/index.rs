@@ -661,8 +661,8 @@ mod tests {
     }
 
     fn run_test_and_clean_up(
-        test: impl FnOnce(PathBuf) -> () + std::panic::UnwindSafe,
-    ) -> () {
+        test: impl FnOnce(PathBuf) + std::panic::UnwindSafe,
+    ) {
         let path = get_temp_dir();
         let result = std::panic::catch_unwind(|| test(path.clone()));
         std::fs::remove_dir_all(path.clone())
@@ -777,7 +777,7 @@ mod tests {
             assert_eq!(update.added.len(), 1);
 
             let added_key =
-                CanonicalPathBuf::canonicalize(&expected_path.clone())
+                CanonicalPathBuf::canonicalize(expected_path.clone())
                     .expect("CanonicalPathBuf should be fine");
             assert_eq!(
                 update

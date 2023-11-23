@@ -25,6 +25,20 @@ pub struct Properties {
     pub title: String,
     pub desc: Option<String>,
 }
+/// Write data to a tempory file and move that written file to destination
+///
+/// May failed if writing or moving failed
+fn temp_and_move(
+    data: &[u8],
+    dest_dir: impl AsRef<Path>,
+    filename: &str,
+) -> Result<()> {
+    let mut path = std::env::temp_dir();
+    path.push(filename);
+    std::fs::write(&path, data)?;
+    std::fs::rename(path, dest_dir.as_ref().join(filename))?;
+    Ok(())
+}
 
 impl Link {
     pub fn new(url: Url, title: String, desc: Option<String>) -> Self {
@@ -55,8 +69,8 @@ impl Link {
     }
 
     /// Load a link with its properties from file
-    pub fn load<P: AsRef<Path>>(root: P, path: P) -> Result<Self> {
-        let p = path.as_ref().to_path_buf();
+    pub fn load<P: AsRef<Path>>(root: P, filename: P) -> Result<Self> {
+        let p = root.as_ref().join(filename);
         let url = Self::load_url(p)?;
         let id = ResourceId::compute_bytes(url.as_str().as_bytes())?;
         // Load user properties first
@@ -88,13 +102,8 @@ impl Link {
         let id_string = id.to_string();
 
         // Resources are stored in the folder chosen by user
-        let folder = root.as_ref().join(&id_string);
-        let link_file = AtomicFile::new(&folder)?;
-        let tmp = link_file.make_temp()?;
-        (&tmp).write_all(self.url.as_str().as_bytes())?;
-        let current_link = link_file.load()?;
-        link_file.compare_and_swap(&current_link, tmp)?;
-
+        let bytes = self.url.as_str().as_bytes();
+        temp_and_move(bytes, root.as_ref(), &id_string)?;
         //User defined properties
         store_properties(&root, id, &self.prop)?;
 
@@ -167,11 +176,8 @@ impl Link {
     }
 
     fn load_url(path: PathBuf) -> Result<Url> {
-        let file = AtomicFile::new(path)?;
-        let read_file = file.load()?;
-        let content = read_file.read_to_string()?;
-        let url_str = str::from_utf8(content.as_bytes())?;
-        Ok(Url::from_str(url_str)?)
+        let content = std::fs::read_to_string(path)?;
+        Ok(Url::from_str(&content)?)
     }
 }
 
@@ -310,29 +316,28 @@ async fn test_create_link_file() {
 
     // Resources are stored in the folder chosen by user
     let path = root.join(link.id().unwrap().to_string());
-    let file = AtomicFile::new(&path).unwrap();
+
     for save_preview in [false, true] {
-        link.save(root, save_preview).await.unwrap();
-        let current = file.load().unwrap();
-        let current_bytes = current.read_to_string().unwrap();
+        link.save(&root, save_preview).await.unwrap();
+        let current_bytes = std::fs::read_to_string(&path).unwrap();
         let url: Url =
             Url::from_str(str::from_utf8(current_bytes.as_bytes()).unwrap())
                 .unwrap();
         assert_eq!(url.as_str(), "https://kaydee.net/blog/open-graph-image/");
-        let link = Link::load(root, path.as_path()).unwrap();
+        let link = Link::load(root, &path).unwrap();
         assert_eq!(link.url.as_str(), url.as_str());
         assert_eq!(link.prop.desc.unwrap(), "test_desc");
         assert_eq!(link.prop.title, "test_title");
 
         let id = ResourceId::compute_bytes(current_bytes.as_bytes()).unwrap();
-        let path = Path::new(root)
+        let path = Path::new(&root)
             .join(ARK_FOLDER)
             .join(PREVIEWS_STORAGE_FOLDER)
             .join(id.to_string());
         if path.exists() {
-            assert_eq!(save_preview, true)
+            assert!(save_preview)
         } else {
-            assert_eq!(save_preview, false)
+            assert!(!save_preview)
         }
     }
 }

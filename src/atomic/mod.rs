@@ -66,7 +66,7 @@ mod tests {
     fn failed_to_write_simultaneously() {
         let dir = TempDir::new("writing_test").unwrap();
         let root = dir.path();
-        let shared_file = std::sync::Arc::new(AtomicFile::new(&root).unwrap());
+        let shared_file = std::sync::Arc::new(AtomicFile::new(root).unwrap());
         let mut handles = Vec::with_capacity(5);
         for i in 0..5 {
             let file = shared_file.clone();
@@ -74,7 +74,7 @@ mod tests {
                 let temp = file.make_temp().unwrap();
                 let current = file.load().unwrap();
                 let content = format!("Content from thread {i}!");
-                (&temp).write_all(&content.as_bytes()).unwrap();
+                (&temp).write_all(content.as_bytes()).unwrap();
                 // In case slow computer ensure each thread are running in the same time
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 file.compare_and_swap(&current, temp)
@@ -99,7 +99,7 @@ mod tests {
     fn multiple_writes_detected() {
         let dir = TempDir::new("simultaneous_writes").unwrap();
         let root = dir.path();
-        let shared_file = std::sync::Arc::new(AtomicFile::new(&root).unwrap());
+        let shared_file = std::sync::Arc::new(AtomicFile::new(root).unwrap());
         let thread_number = 10;
         assert!(thread_number > 3);
         // Need to have less than 255 thread to store thread number as byte directly

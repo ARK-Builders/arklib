@@ -276,19 +276,19 @@ mod tests {
     fn delete_old_files() {
         let dir = TempDir::new("max_files").unwrap();
         let root = dir.path();
-        let file = AtomicFile::new(&root).unwrap();
+        let file = AtomicFile::new(root).unwrap();
         let number_of_version = 20;
         assert!(number_of_version > MAX_VERSION_FILES);
         for i in 0..number_of_version {
             let temp = file.make_temp().unwrap();
             let current = file.load().unwrap();
             let content = format!("Version {}", i + 1);
-            (&temp).write_all(&content.as_bytes()).unwrap();
+            (&temp).write_all(content.as_bytes()).unwrap();
             file.compare_and_swap(&current, temp).unwrap();
         }
 
         // Check the number of files
-        let version_files = fs::read_dir(&root).unwrap().count();
+        let version_files = fs::read_dir(root).unwrap().count();
         assert_eq!(version_files, MAX_VERSION_FILES);
     }
 
@@ -296,20 +296,20 @@ mod tests {
     fn mutliples_version_files() {
         let dir = TempDir::new("multiples_version").unwrap();
         let root = dir.path();
-        let file = AtomicFile::new(&root).unwrap();
+        let file = AtomicFile::new(root).unwrap();
         let temp = file.make_temp().unwrap();
         let current = file.load().unwrap();
-        let current_machine = format!("Content from current machine");
+        let current_machine = "Content from current machine".to_string();
         (&temp)
-            .write_all(&current_machine.as_bytes())
+            .write_all(current_machine.as_bytes())
             .unwrap();
         file.compare_and_swap(&current, temp).unwrap();
         // Other machine file (renamed on purpose to validate test)
         let current = file.load().unwrap();
-        let other_machine = format!("Content from Cellphone");
+        let other_machine = "Content from Cellphone".to_string();
         let temp = file.make_temp().unwrap();
         (&temp)
-            .write_all(&other_machine.as_bytes())
+            .write_all(other_machine.as_bytes())
             .unwrap();
         file.compare_and_swap(&current, temp).unwrap();
         let version_2_path = file.path(2);
@@ -336,7 +336,7 @@ mod tests {
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
         let current_machine = machine_uid::get().unwrap();
-        let file = AtomicFile::new(&root).unwrap();
+        let file = AtomicFile::new(root).unwrap();
         let prefix = &file.prefix;
         for version in 0..versions {
             let file_path = root.join(format!("{}{}", prefix, version + 1));

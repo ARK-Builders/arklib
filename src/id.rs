@@ -120,14 +120,15 @@ mod tests {
     fn compute_id_test() {
         let file_path = Path::new("./tests/lena.jpg");
         let data_size = fs::metadata(file_path)
-            .expect(&format!(
-                "Could not open image test file_path.{}",
-                file_path.display()
-            ))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Could not open image test file_path.{}",
+                    file_path.display()
+                )
+            })
             .len();
 
-        let id1 = ResourceId::compute(data_size.try_into().unwrap(), file_path)
-            .unwrap();
+        let id1 = ResourceId::compute(data_size, file_path).unwrap();
         assert_eq!(id1.crc32, 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
