@@ -293,33 +293,37 @@ mod tests {
     }
 
     #[test]
-    fn mutliples_version_files() {
-        let dir = TempDir::new("multiples_version").unwrap();
+    fn multiple_version_files() {
+        let dir = TempDir::new("multiple_version").unwrap();
         let root = dir.path();
+
         let file = AtomicFile::new(root).unwrap();
         let temp = file.make_temp().unwrap();
         let current = file.load().unwrap();
-        let current_machine = "Content from current machine".to_string();
+        let content_local = "Locally created content".to_string();
         (&temp)
-            .write_all(current_machine.as_bytes())
+            .write_all(content_local.as_bytes())
             .unwrap();
         file.compare_and_swap(&current, temp).unwrap();
+
         // Other machine file (renamed on purpose to validate test)
         let current = file.load().unwrap();
-        let other_machine = "Content from Cellphone".to_string();
+        let content_remote = "Content created on remote machine".to_string();
         let temp = file.make_temp().unwrap();
         (&temp)
-            .write_all(other_machine.as_bytes())
+            .write_all(content_remote.as_bytes())
             .unwrap();
         file.compare_and_swap(&current, temp).unwrap();
+
         let version_2_path = file.path(2);
         let rename_path =
             root.join(format!("{}_cellphoneId.1", root.display()));
         fs::rename(version_2_path, rename_path).unwrap();
+
         // We should take content from current machine
         let current = file.load().unwrap();
         let content = current.read_to_string().unwrap();
-        assert_eq!(content, current_machine);
+        assert_eq!(content, content_local);
     }
 
     #[rstest]
