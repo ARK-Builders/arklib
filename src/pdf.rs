@@ -7,6 +7,7 @@ use std::{
 use image::DynamicImage;
 use once_cell::sync::OnceCell;
 use pdfium_render::prelude::*;
+use log::debug;
 
 static PDFIUM: OnceCell<Pdfium> = OnceCell::new(); // static initializers must impl Sync + Send
 
@@ -36,17 +37,23 @@ pub fn render_preview_page<R>(data: R, quailty: PDFQuality) -> DynamicImage
 where
     R: Read + Seek + 'static,
 {
+    debug!("render_preview_page PDF 1");
     let render_cfg = PdfRenderConfig::new();
+    debug!("render_preview_page PDF 2");
     let render_cfg = match quailty {
         PDFQuality::High => render_cfg.set_target_width(2000),
         PDFQuality::Medium => render_cfg,
         PDFQuality::Low => render_cfg.thumbnail(50),
     }
     .rotate_if_landscape(PdfBitmapRotation::Degrees90, true);
+    debug!("render_preview_page PDF 3");
 
     if PDFIUM.get().is_none() {
+        debug!("render_preview_page PDF 4");
         initialize_pdfium();
+        debug!("render_preview_page PDF 5");
     }
+    debug!("render_preview_page PDF 6");
     PDFIUM
         .get()
         .unwrap()
