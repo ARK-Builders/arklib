@@ -42,7 +42,7 @@ where
     debug!("render_preview_page PDF 2");
     let render_cfg = match quailty {
         PDFQuality::High => render_cfg.set_target_width(2000),
-        PDFQuality::Medium => render_cfg,
+        PDFQuality::Medium => render_cfg.thumbnail(50),
         PDFQuality::Low => render_cfg.thumbnail(50),
     }
     .rotate_if_landscape(PdfBitmapRotation::Degrees90, true);
