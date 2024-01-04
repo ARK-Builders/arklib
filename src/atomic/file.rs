@@ -4,6 +4,8 @@ use std::io::{Error, ErrorKind, Read, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use crate::id::device_id;
+
 const MAX_VERSION_FILES: usize = 10;
 
 pub struct TmpFile {
@@ -105,7 +107,8 @@ impl AtomicFile {
         // This UID must be treated as confidential information.
         // Depending on network transport used to sync the files (if any),
         // it can leak to an unauthorized party.
-        let machine_id = machine_uid::get()?;
+        let machine_id = device_id::read()?;
+        
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
             Some(name) => name.to_str().unwrap(),
@@ -267,6 +270,8 @@ impl AtomicFile {
 
 #[cfg(test)]
 mod tests {
+    use crate::id::device_id;
+
     use super::*;
     use rstest::rstest;
     use std::io::Write;
@@ -274,6 +279,8 @@ mod tests {
 
     #[test]
     fn delete_old_files() {
+        device_id::load("./").unwrap();
+
         let dir = TempDir::new("max_files").unwrap();
         let root = dir.path();
         let file = AtomicFile::new(root).unwrap();
@@ -294,8 +301,10 @@ mod tests {
 
     #[test]
     fn multiple_version_files() {
+        
         let dir = TempDir::new("multiple_version").unwrap();
         let root = dir.path();
+        device_id::load(root).unwrap();
 
         let file = AtomicFile::new(root).unwrap();
         let temp = file.make_temp().unwrap();
@@ -339,7 +348,8 @@ mod tests {
         // Create the files without atmic to handles files names
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        let current_machine = machine_uid::get().unwrap();
+        device_id::load(root).unwrap();
+        let current_machine = device_id::read().unwrap();
         let file = AtomicFile::new(root).unwrap();
         let prefix = &file.prefix;
         for version in 0..versions {
