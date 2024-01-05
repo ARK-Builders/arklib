@@ -270,7 +270,7 @@ impl AtomicFile {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::app_id;
+    use crate::{id::app_id, initialize};
 
     use super::*;
     use rstest::rstest;
@@ -279,8 +279,7 @@ mod tests {
 
     #[test]
     fn delete_old_files() {
-        app_id::load("./").unwrap();
-
+        initialize();
         let dir = TempDir::new("max_files").unwrap();
         let root = dir.path();
         let file = AtomicFile::new(root).unwrap();
@@ -301,9 +300,10 @@ mod tests {
 
     #[test]
     fn multiple_version_files() {
+        initialize();
+
         let dir = TempDir::new("multiple_version").unwrap();
         let root = dir.path();
-        app_id::load(root).unwrap();
 
         let file = AtomicFile::new(root).unwrap();
         let temp = file.make_temp().unwrap();
@@ -344,10 +344,11 @@ mod tests {
         #[case] cellphone_versions: &[usize],
         #[case] temp_name: &str,
     ) {
+        initialize();
+
         // Create the files without atmic to handles files names
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        app_id::load(root).unwrap();
         let current_machine = app_id::read().unwrap();
         let file = AtomicFile::new(root).unwrap();
         let prefix = &file.prefix;

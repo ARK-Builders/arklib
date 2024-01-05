@@ -63,7 +63,7 @@ pub fn load_raw_properties<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::id::app_id;
+    use crate::{id::app_id, initialize};
 
     use super::*;
     use tempdir::TempDir;
@@ -73,9 +73,10 @@ mod tests {
 
     #[test]
     fn test_store_and_load() {
+        initialize();
+
         let dir = TempDir::new("arklib_test").unwrap();
         let root = dir.path();
-        app_id::load(root).unwrap();
         log::debug!("temporary root: {}", root.display());
 
         let id = ResourceId {

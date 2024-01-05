@@ -25,6 +25,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use canonical_path::CanonicalPathBuf;
+use std::sync::Once;
+
+use crate::id::app_id;
+
+pub static INIT: Once = Once::new();
 
 pub const ARK_FOLDER: &str = ".ark";
 
@@ -54,6 +59,13 @@ lazy_static! {
 }
 lazy_static! {
     pub static ref APP_ID_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
+}
+
+pub fn initialize() {
+    INIT.call_once(|| {
+        log::info!("Initializing arklib");
+        app_id::load("./").unwrap();
+    });
 }
 
 pub fn provide_index<P: AsRef<Path>>(

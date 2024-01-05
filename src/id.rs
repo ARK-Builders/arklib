@@ -170,10 +170,14 @@ const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
 #[cfg(test)]
 mod tests {
+    use crate::initialize;
+
     use super::*;
 
     #[test]
     fn compute_id_test() {
+        initialize();
+
         let file_path = Path::new("./tests/lena.jpg");
         let data_size = fs::metadata(file_path)
             .unwrap_or_else(|_| {
