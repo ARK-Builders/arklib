@@ -44,7 +44,7 @@ pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
 pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
 
-pub const DEVICE_ID_FILE: &str = "device";
+pub const APP_ID_FILE: &str = "device";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 
@@ -53,7 +53,7 @@ lazy_static! {
         RwLock::new(HashMap::new());
 }
 lazy_static! {
-    pub static ref DEVICE_ID_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
+    pub static ref APP_ID_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 }
 
 pub fn provide_index<P: AsRef<Path>>(

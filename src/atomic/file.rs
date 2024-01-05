@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind, Read, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use crate::id::device_id;
+use crate::id::app_id;
 
 const MAX_VERSION_FILES: usize = 10;
 
@@ -48,8 +48,8 @@ impl Drop for TmpFile {
 
 #[derive(Clone)]
 pub struct ReadOnlyFile {
-    version: usize,
-    path: PathBuf,
+    pub version: usize,
+    pub path: PathBuf,
 }
 
 /// This struct is the only way to read the file. Both path and version are private
@@ -107,8 +107,8 @@ impl AtomicFile {
         // This UID must be treated as confidential information.
         // Depending on network transport used to sync the files (if any),
         // it can leak to an unauthorized party.
-        let machine_id = device_id::read()?;
-        
+        let machine_id = app_id::read()?;
+
         std::fs::create_dir_all(&directory)?;
         let filename: &str = match directory.file_name() {
             Some(name) => name.to_str().unwrap(),
@@ -270,7 +270,7 @@ impl AtomicFile {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::device_id;
+    use crate::id::app_id;
 
     use super::*;
     use rstest::rstest;
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn delete_old_files() {
-        device_id::load("./").unwrap();
+        app_id::load("./").unwrap();
 
         let dir = TempDir::new("max_files").unwrap();
         let root = dir.path();
@@ -301,10 +301,9 @@ mod tests {
 
     #[test]
     fn multiple_version_files() {
-        
         let dir = TempDir::new("multiple_version").unwrap();
         let root = dir.path();
-        device_id::load(root).unwrap();
+        app_id::load(root).unwrap();
 
         let file = AtomicFile::new(root).unwrap();
         let temp = file.make_temp().unwrap();
@@ -348,8 +347,8 @@ mod tests {
         // Create the files without atmic to handles files names
         let dir = TempDir::new(temp_name).unwrap();
         let root = dir.path();
-        device_id::load(root).unwrap();
-        let current_machine = device_id::read().unwrap();
+        app_id::load(root).unwrap();
+        let current_machine = app_id::read().unwrap();
         let file = AtomicFile::new(root).unwrap();
         let prefix = &file.prefix;
         for version in 0..versions {

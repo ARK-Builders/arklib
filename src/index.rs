@@ -604,7 +604,7 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::{ResourceId, device_id};
+    use crate::id::{app_id, ResourceId};
     use crate::index::{discover_paths, IndexEntry};
     use crate::ArklibError;
     use crate::ResourceIndex;
