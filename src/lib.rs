@@ -49,7 +49,7 @@ pub const METADATA_STORAGE_FOLDER: &str = "cache/metadata";
 pub const PREVIEWS_STORAGE_FOLDER: &str = "cache/previews";
 pub const THUMBNAILS_STORAGE_FOLDER: &str = "cache/thumbnails";
 
-pub const APP_ID_FILE: &str = "device";
+pub const APP_ID_FILE: &str = "app_id";
 
 pub type ResourceIndexLock = Arc<RwLock<ResourceIndex>>;
 
