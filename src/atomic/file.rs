@@ -44,7 +44,7 @@ impl Drop for TmpFile {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ReadOnlyFile {
     version: usize,
     path: PathBuf,
@@ -101,12 +101,12 @@ fn parse_version(filename: Option<&str>) -> Option<usize> {
 
 impl AtomicFile {
     pub fn new(path: impl Into<PathBuf>) -> crate::Result<Self> {
-        let directory = path.into();
+        let directory: PathBuf = path.into();
         // This UID must be treated as confidential information.
         // Depending on network transport used to sync the files (if any),
         // it can leak to an unauthorized party.
-        let machine_id = machine_uid::get()?;
-        std::fs::create_dir_all(&directory)?;
+        let machine_id = machine_uid::get().unwrap();
+        std::fs::create_dir_all(&directory).unwrap();
         let filename: &str = match directory.file_name() {
             Some(name) => name.to_str().unwrap(),
             None => Err(std::io::Error::new(
@@ -163,7 +163,7 @@ impl AtomicFile {
     }
 
     pub fn load(&self) -> Result<ReadOnlyFile> {
-        let (version, mut files) = self.latest_version()?;
+        let (version, mut files) = self.latest_version().unwrap();
         let file = match files.len() {
             0 => ReadOnlyFile {
                 version,

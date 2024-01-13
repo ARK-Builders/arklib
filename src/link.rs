@@ -23,6 +23,7 @@ pub struct Link {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Properties {
     pub title: String,
+    #[serde(alias = "description")]
     pub desc: Option<String>,
 }
 /// Write data to a tempory file and move that written file to destination
@@ -61,10 +62,10 @@ impl Link {
             .join(ARK_FOLDER)
             .join(PROPERTIES_STORAGE_FOLDER)
             .join(id.to_string());
-        let file = AtomicFile::new(path)?;
-        let current = file.load()?;
-        let data = current.read_to_string()?;
-        let user_meta: Properties = serde_json::from_str(&data)?;
+        let file = AtomicFile::new(path).unwrap();
+        let current = file.load().unwrap();
+        let data = current.clone().read_to_string().unwrap();
+        let user_meta: Properties = serde_json::from_str(&data).unwrap();
         Ok(user_meta)
     }
 
