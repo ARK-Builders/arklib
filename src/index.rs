@@ -374,21 +374,23 @@ impl ResourceIndex {
                         self.forget_path(canonical_path, old_id)
                     }
                     Ok(new_entry) => {
+                        
                         // valid resource exists by the path
-                        let curr_entry = &self.path2id[canonical_path];
-
-                        if curr_entry.id == new_entry.id {
-                            // in rare cases we are here due to hash collision
-
-                            if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was modified but not its content", &canonical_path);
+                        // in rare cases we are here due to hash collision
+                        if let Some(curr_entry) =
+                            self.path2id.get(canonical_path)
+                        {
+                            if curr_entry.id == new_entry.id {
+                                // in rare cases we are here due to hash collision
+                                if curr_entry.modified == new_entry.modified {
+                                    log::warn!("path {:?} was modified but not its content", &canonical_path);
+                                }
+                                // the caller must have ensured that the path was
+                                // updated
+                                return Err(ArklibError::Collision(
+                                    "New content has the same id".into(),
+                                ));
                             }
-
-                            // the caller must have ensured that the path was
-                            // updated
-                            return Err(ArklibError::Collision(
-                                "New content has the same id".into(),
-                            ));
                         }
 
                         // new resource exists by the path
@@ -983,5 +985,85 @@ mod tests {
         assert!(new2 > old1);
         assert!(new2 > old2);
         assert!(new2 > new1);
+    }
+
+    #[test]
+    fn should_correctly_update_one_resource() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+            let mut actual = ResourceIndex::build(path.clone());
+
+            println!("==🌹🌹=update_one unit tests start==");
+
+            for (key, value) in &actual.path2id {
+                println!(
+                    "===❤❤========update_one_new_entry Resource ID: {}",
+                    &actual.path2id[key].id
+                );
+            }
+
+            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+            let mut file_path = path.clone();
+            file_path.push(FILE_NAME_1);
+            let old_id = ResourceId {
+                data_size: FILE_SIZE_1,
+                crc32: CRC32_1,
+            };
+            let path_buf: CanonicalPathBuf =
+                CanonicalPathBuf::canonicalize(&file_path).unwrap();
+            let update = actual
+                .update_one(&path_buf.clone(), old_id)
+                .expect("Should update one resource correctly");
+
+            for (key, value) in &actual.path2id {
+                println!(
+                    "===😂😂========update_after_entry Resource ID: {}",
+                    &actual.path2id[key].id
+                );
+            }
+
+            println!(
+                "===✔✔==added=:{}   deleted={}",update.added.len().to_string(),update.deleted.len().to_string()
+            );
+
+            assert_eq!(update.added.len(), 1);
+            assert_eq!(actual.path2id.len(), 2);
+        })
+    }
+
+    #[test]
+    fn should_correctly_update_all_resource() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+            let mut actual = ResourceIndex::build(path.clone());
+
+            println!("==🌹🌹=update_all unit tests start==");
+            for (key, value) in &actual.path2id {
+                println!(
+                    "===❤❤========update_one_new_entry Resource ID: {}",
+                    &actual.path2id[key].id
+                );
+            }
+
+            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+
+            let update = actual
+                .update_all()
+                .expect("Should update index correctly");
+
+            for (key, value) in &actual.path2id {
+                println!(
+                    "===😂😂========update_after_entry Resource ID: {}",
+                    &actual.path2id[key].id
+                );
+            }
+
+            println!(
+                "===✔✔==added=:{}   deleted={}",update.added.len().to_string(),update.deleted.len().to_string()
+            );
+
+            assert_eq!(update.deleted.len(), 0);
+            assert_eq!(update.added.len(), 1);
+        })
     }
 }
