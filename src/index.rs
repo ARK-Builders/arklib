@@ -352,6 +352,10 @@ impl ResourceIndex {
             return self.forget_id(old_id);
         }
 
+        let deleted: HashSet<ResourceId> = HashSet::new();
+        let added: HashMap<CanonicalPathBuf, ResourceId> = HashMap::new();
+        let mut update = IndexUpdate { deleted, added };
+
         let canonical_path_buf = CanonicalPathBuf::canonicalize(path)?;
         let canonical_path = canonical_path_buf.as_canonical_path();
 
@@ -365,35 +369,42 @@ impl ResourceIndex {
             Err(_) => {
                 // updating the index after resource removal is a correct
                 // scenario
-                self.forget_path(canonical_path, old_id)
+                return self.forget_path(canonical_path, old_id);
             }
             Ok(metadata) => {
                 match scan_entry(canonical_path, metadata) {
                     Err(_) => {
                         // a directory or empty file exists by the path
-                        self.forget_path(canonical_path, old_id)
+                        return self.forget_path(canonical_path, old_id);
                     }
                     Ok(new_entry) => {
-                        
-                        // valid resource exists by the path
                         // in rare cases we are here due to hash collision
                         if let Some(curr_entry) =
                             self.path2id.get(canonical_path)
                         {
                             if curr_entry.id == new_entry.id {
-                                // in rare cases we are here due to hash collision
                                 if curr_entry.modified == new_entry.modified {
-                                    log::warn!("path {:?} was modified but not its content", &canonical_path);
+                                    log::warn!("path {:?} does not modified but not its content", &canonical_path);
+                                    return Ok(update);
                                 }
-                                // the caller must have ensured that the path was
+
+                                //in cases Resourceid' didn't modify and 'SystemTime' was modified
                                 // updated
-                                return Err(ArklibError::Collision(
-                                    "New content has the same id".into(),
-                                ));
+                                log::warn!("Resourceid didn't modify but SystemTime was modified");
+                                // update.added.insert(
+                                //     canonical_path_buf.clone(),
+                                //     new_entry.id,
+                                // );
+                                // self.insert_entry(
+                                //     canonical_path_buf.clone(),
+                                //     new_entry,
+                                // );
+                                // update.deleted.insert(old_id);
+                                return Ok(update);
                             }
                         }
 
-                        // new resource exists by the path
+                        //new resource exists by the path
                         self.forget_path(canonical_path, old_id).map(
                             |mut update| {
                                 update.added.insert(
@@ -607,7 +618,7 @@ fn is_hidden(entry: &DirEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::id::ResourceId;
-    use crate::index::{discover_paths, IndexEntry};
+    use crate::index::{discover_paths, scan_entries, IndexEntry};
     use crate::initialize;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
@@ -620,6 +631,10 @@ mod tests {
     use std::path::PathBuf;
     use std::time::SystemTime;
     use uuid::Uuid;
+
+    use std::collections::{HashMap, HashSet};
+    type Paths = HashSet<CanonicalPathBuf>;
+    use walkdir::DirEntry;
 
     const FILE_SIZE_1: u64 = 10;
     const FILE_SIZE_2: u64 = 11;
@@ -1023,7 +1038,9 @@ mod tests {
             }
 
             println!(
-                "===✔✔==added=:{}   deleted={}",update.added.len().to_string(),update.deleted.len().to_string()
+                "===✔✔==added=:{}   deleted={}",
+                update.added.len().to_string(),
+                update.deleted.len().to_string()
             );
 
             assert_eq!(update.added.len(), 1);
@@ -1059,11 +1076,81 @@ mod tests {
             }
 
             println!(
-                "===✔✔==added=:{}   deleted={}",update.added.len().to_string(),update.deleted.len().to_string()
+                "===✔✔==added=:{}   deleted={}",
+                update.added.len().to_string(),
+                update.deleted.len().to_string()
             );
 
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
+        })
+    }
+
+    #[test]
+    fn should_correctly_update_all_using_update_one_resource() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+            let mut actual = ResourceIndex::build(path.clone());
+
+            let mut all_deleted: HashSet<ResourceId> = HashSet::new();
+            let mut all_added: HashMap<CanonicalPathBuf, ResourceId> =
+                HashMap::new();
+
+            println!("==🌹🌹=update_all using update_one unit tests start==");
+            for (key, value) in &actual.path2id {
+                println!(
+                    "===❤❤========update_one_new_entry Resource ID: {}",
+                    value.id
+                );
+            }
+
+            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+
+            for (old_path, old_index_enry) in &actual.path2id {
+                let one_index_update = actual
+                    .clone()
+                    .update_one(&old_path.clone(), old_index_enry.id)
+                    .expect("Should update one resource correctly");
+
+                for (add_path, &add_id) in one_index_update.added.iter() {
+                    all_added.insert(add_path.clone(), add_id.clone());
+                }
+
+                for delete_id in one_index_update.deleted {
+                    all_deleted.insert(delete_id);
+                }
+            }
+
+            let curr_paths: HashMap<CanonicalPathBuf, DirEntry> =
+                discover_paths(path.clone());
+            let curr_entries = scan_entries(curr_paths);
+
+            for (cur_path, cur_entry) in curr_entries {
+                let one_index_update = actual
+                    .update_one(&cur_path.clone(), cur_entry.id)
+                    .expect("Should update one resource correctly");
+
+                for (add_path, &add_id) in one_index_update.added.iter() {
+                    all_added.insert(add_path.clone(), add_id.clone());
+                }
+
+                for delete_id in one_index_update.deleted {
+                    all_deleted.insert(delete_id);
+                }
+            }
+
+            for (key, entry) in &actual.path2id {
+                println!(
+                    "===😂😂========update_after_entry Resource ID: {}",
+                    entry.id
+                );
+            }
+
+            println!(
+                "===✔✔==added=:{}   deleted={}",
+                all_added.len().to_string(),
+                all_deleted.len().to_string()
+            );
         })
     }
 }
