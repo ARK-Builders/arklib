@@ -30,7 +30,7 @@ pub struct ResourceIndex {
     root: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct IndexUpdate {
     pub deleted: HashSet<ResourceId>,
     pub added: HashMap<CanonicalPathBuf, ResourceId>,
@@ -618,7 +618,7 @@ fn is_hidden(entry: &DirEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::id::ResourceId;
-    use crate::index::{discover_paths, scan_entries, IndexEntry};
+    use crate::index::{discover_paths, scan_entries, IndexEntry, IndexUpdate};
     use crate::initialize;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
@@ -645,6 +645,8 @@ mod tests {
 
     const CRC32_1: u32 = 3817498742;
     const CRC32_2: u32 = 1804055020;
+
+    use crate::{ArklibError, Result};
 
     fn get_temp_dir() -> PathBuf {
         create_dir_at(std::env::temp_dir())
@@ -1151,6 +1153,48 @@ mod tests {
                 all_added.len().to_string(),
                 all_deleted.len().to_string()
             );
+        })
+    }
+
+    #[test]
+    fn should_correctly_update_all_compare_update_one_resource() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+            let mut actual = ResourceIndex::build(path.clone());
+            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+
+            let updated_using_update_all_result = actual.clone().update_all();
+
+            let mut all_deleted: HashSet<ResourceId> = HashSet::new();
+            let mut all_added: HashMap<CanonicalPathBuf, ResourceId> =
+                HashMap::new();
+
+            let curr_paths: HashMap<CanonicalPathBuf, DirEntry> =
+                discover_paths(path.clone());
+            let curr_entries = scan_entries(curr_paths);
+
+            for (cur_path, cur_entry) in curr_entries {
+                let one_index_update = actual
+                    .update_one(&cur_path.clone(), cur_entry.id)
+                    .expect("Should update one resource correctly");
+
+                for (add_path, &add_id) in one_index_update.added.iter() {
+                    all_added.insert(add_path.clone(), add_id.clone());
+                }
+
+                for delete_id in one_index_update.deleted {
+                    all_deleted.insert(delete_id);
+                }
+            }
+
+            let updated_using_update_one = IndexUpdate {
+                deleted: all_deleted,
+                added: all_added,
+            };
+            let updated_using_update_all =
+                updated_using_update_all_result.unwrap();
+
+            assert_eq!(updated_using_update_all, updated_using_update_one);
         })
     }
 }
