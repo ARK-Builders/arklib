@@ -409,7 +409,9 @@ impl ResourceIndex {
                 }
             }
 
-            return Err(ArklibError::Path("The path isn't indexed or doesn't map to the id".into()));
+            return Err(ArklibError::Path(
+                "The path isn't indexed or doesn't map to the id".into(),
+            ));
         }
 
         let path_buf = CanonicalPathBuf::canonicalize(path)?;
@@ -1059,7 +1061,9 @@ mod tests {
 
             modify_file(&mut file);
 
-            let result = index.update_one(&file_path, resource_id_1()).unwrap();
+            let result = index
+                .update_one(&file_path, resource_id_1())
+                .unwrap();
 
             assert_eq!(result.deleted.len(), 1);
             assert_eq!(result.added.len(), 1);
