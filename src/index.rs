@@ -404,7 +404,7 @@ impl ResourceIndex {
 
         if !path.as_ref().exists() {
             if let Some(indexed_path) = self.id2path.get(&old_id) {
-                if indexed_path.as_path() == path { //FIXME
+                if indexed_path.as_path() == path.as_ref() {
                     return self.forget_id(old_id);
                 }
             }
