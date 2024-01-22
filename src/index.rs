@@ -403,7 +403,15 @@ impl ResourceIndex {
         log::debug!("Updating a single entry in the index");
 
         if !path.as_ref().exists() {
-            return self.forget_id(old_id);
+            if let Some(indexed_path) = self.id2path.get(&old_id) {
+                if indexed_path.as_path() == path.as_ref() {
+                    return self.forget_id(old_id);
+                }
+            }
+
+            return Err(ArklibError::Path(
+                "The path isn't indexed or doesn't map to the id".into(),
+            ));
         }
 
         let path_buf = CanonicalPathBuf::canonicalize(path)?;
@@ -670,15 +678,19 @@ mod tests {
     use std::fs::File;
     #[cfg(target_os = "linux")]
     use std::fs::Permissions;
+    use std::io::Write;
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
+
+    use rand::Rng;
 
     use std::path::PathBuf;
     use std::time::SystemTime;
     use uuid::Uuid;
 
-    const FILE_SIZE_1: u64 = 10;
-    const FILE_SIZE_2: u64 = 11;
+    const DATA_SIZE_1: u64 = 10;
+    const DATA_SIZE_2: u64 = 11;
+    const MODIFIED_SIZE: u64 = 12;
 
     const FILE_NAME_1: &str = "test1.txt";
     const FILE_NAME_2: &str = "test2.txt";
@@ -716,6 +728,26 @@ mod tests {
         (file, file_path)
     }
 
+    fn modify_file(file: &mut File) {
+        let bytes = rand::thread_rng().gen::<[u8; MODIFIED_SIZE as usize]>();
+        file.write(&bytes)
+            .expect("Couldn't write into the file");
+    }
+
+    fn resource_id_1() -> ResourceId {
+        ResourceId {
+            data_size: DATA_SIZE_1,
+            crc32: CRC32_1,
+        }
+    }
+
+    fn resource_id_2() -> ResourceId {
+        ResourceId {
+            data_size: DATA_SIZE_2,
+            crc32: CRC32_2,
+        }
+    }
+
     fn run_test_and_clean_up(
         test: impl FnOnce(PathBuf) + std::panic::UnwindSafe,
     ) {
@@ -734,41 +766,78 @@ mod tests {
     // resource index build
 
     #[test]
+    fn index_build_should_ignore_empty_file() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(0), None);
+            let index = ResourceIndex::build(path.clone());
+
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 0);
+            assert_eq!(index.id2path.len(), 0);
+            assert_eq!(index.collisions.len(), 0);
+        })
+    }
+
+    #[test]
+    fn index_build_should_ignore_hidden_file() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(DATA_SIZE_1), Some(".hidden"));
+            let index = ResourceIndex::build(path.clone());
+
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 0);
+            assert_eq!(index.id2path.len(), 0);
+            assert_eq!(index.collisions.len(), 0);
+        })
+    }
+
+    #[test]
+    fn index_build_should_ignore_empty_directory() {
+        run_test_and_clean_up(|path| {
+            create_dir_at(path.clone());
+            let index = ResourceIndex::build(path.clone());
+
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 0);
+            assert_eq!(index.id2path.len(), 0);
+            assert_eq!(index.collisions.len(), 0);
+        })
+    }
+
+    #[test]
     fn index_build_should_process_1_file_successfully() {
         run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+            create_file_at(path.clone(), Some(DATA_SIZE_1), None);
+            let index = ResourceIndex::build(path.clone());
 
-            let actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 1);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 1);
+            assert_eq!(index.id2path.len(), 1);
+            assert!(index.id2path.contains_key(&ResourceId {
+                data_size: DATA_SIZE_1,
                 crc32: CRC32_1,
             }));
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 1);
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 1);
         })
     }
 
     #[test]
     fn index_build_should_process_colliding_files_correctly() {
         run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+            create_file_at(path.clone(), Some(DATA_SIZE_1), None);
+            create_file_at(path.clone(), Some(DATA_SIZE_1), None);
+            let index = ResourceIndex::build(path.clone());
 
-            let actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 2);
+            assert_eq!(index.id2path.len(), 1);
+            assert!(index.id2path.contains_key(&ResourceId {
+                data_size: DATA_SIZE_1,
                 crc32: CRC32_1,
             }));
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 2);
+            assert_eq!(index.collisions.len(), 1);
+            assert_eq!(index.size(), 2);
         })
     }
 
@@ -777,13 +846,12 @@ mod tests {
     #[test]
     fn update_all_should_handle_renamed_file_correctly() {
         run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+            create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
+            create_file_at(path.clone(), Some(DATA_SIZE_2), Some(FILE_NAME_2));
+            let mut index = ResourceIndex::build(path.clone());
 
-            let mut actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 2);
 
             // rename test2.txt to test3.txt
             let mut name_from = path.clone();
@@ -793,12 +861,12 @@ mod tests {
             std::fs::rename(name_from, name_to)
                 .expect("Should rename file successfully");
 
-            let update = actual
+            let update = index
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 2);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 1);
         })
@@ -807,30 +875,29 @@ mod tests {
     #[test]
     fn update_all_should_index_new_file_successfully() {
         run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-
-            let mut actual = ResourceIndex::build(path.clone());
+            create_file_at(path.clone(), Some(DATA_SIZE_1), None);
+            let mut index = ResourceIndex::build(path.clone());
 
             let (_, expected_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+                create_file_at(path.clone(), Some(DATA_SIZE_2), None);
 
-            let update = actual
+            let update = index
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 2);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
+            assert_eq!(index.root, path.clone());
+            assert_eq!(index.path2id.len(), 2);
+            assert_eq!(index.id2path.len(), 2);
+            assert!(index.id2path.contains_key(&ResourceId {
+                data_size: DATA_SIZE_1,
                 crc32: CRC32_1,
             }));
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_2,
+            assert!(index.id2path.contains_key(&ResourceId {
+                data_size: DATA_SIZE_2,
                 crc32: CRC32_2,
             }));
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
 
@@ -844,7 +911,7 @@ mod tests {
                     .expect("Key exists")
                     .clone(),
                 ResourceId {
-                    data_size: FILE_SIZE_2,
+                    data_size: DATA_SIZE_2,
                     crc32: CRC32_2
                 }
             )
@@ -852,13 +919,42 @@ mod tests {
     }
 
     #[test]
+    fn update_all_should_error_on_files_without_permissions() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
+            let (file, _) = create_file_at(
+                path.clone(),
+                Some(DATA_SIZE_2),
+                Some(FILE_NAME_2),
+            );
+
+            let mut index = ResourceIndex::build(path.clone());
+
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 2);
+            #[cfg(target_os = "linux")]
+            file.set_permissions(Permissions::from_mode(0o222))
+                .expect("Should be fine");
+
+            let update = index
+                .update_all()
+                .expect("Should update index correctly");
+
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 2);
+            assert_eq!(update.deleted.len(), 0);
+            assert_eq!(update.added.len(), 0);
+        })
+    }
+
+    #[test]
     fn index_new_should_index_new_file_successfully() {
         run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+            create_file_at(path.clone(), Some(DATA_SIZE_1), None);
             let mut index = ResourceIndex::build(path.clone());
 
             let (_, new_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+                create_file_at(path.clone(), Some(DATA_SIZE_2), None);
 
             let update = index
                 .index_new(&new_path)
@@ -868,13 +964,10 @@ mod tests {
             assert_eq!(index.path2id.len(), 2);
             assert_eq!(index.id2path.len(), 2);
             assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
+                data_size: DATA_SIZE_1,
                 crc32: CRC32_1,
             }));
-            assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
-            }));
+            assert!(index.id2path.contains_key(&resource_id_2()));
             assert_eq!(index.collisions.len(), 0);
             assert_eq!(index.size(), 2);
             assert_eq!(update.deleted.len(), 0);
@@ -889,7 +982,7 @@ mod tests {
                     .expect("Key exists")
                     .clone(),
                 ResourceId {
-                    data_size: FILE_SIZE_2,
+                    data_size: DATA_SIZE_2,
                     crc32: CRC32_2
                 }
             )
@@ -899,181 +992,90 @@ mod tests {
     #[test]
     fn update_one_should_error_on_new_file() {
         run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+            create_file_at(path.clone(), Some(DATA_SIZE_1), None);
             let mut index = ResourceIndex::build(path.clone());
 
             let (_, new_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+                create_file_at(path.clone(), Some(DATA_SIZE_2), None);
 
-            let update = index.update_one(
-                &new_path,
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2,
-                },
-            );
+            let update = index.update_one(&new_path, resource_id_2());
 
             assert!(update.is_err())
         })
     }
 
     #[test]
-    fn update_one_should_index_delete_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+    fn update_one_should_index_deleted_file_successfully() {
+        run_test_and_clean_up(|root_path| {
+            let (_, file_path) = create_file_at(
+                root_path.clone(),
+                Some(DATA_SIZE_1),
+                Some(FILE_NAME_1),
+            );
+            let mut index = ResourceIndex::build(root_path.clone());
 
-            let mut actual = ResourceIndex::build(path.clone());
-
-            let mut file_path = path.clone();
-            file_path.push(FILE_NAME_1);
             std::fs::remove_file(file_path.clone())
                 .expect("Should remove file successfully");
 
-            let update = actual
-                .update_one(
-                    &file_path.clone(),
-                    ResourceId {
-                        data_size: FILE_SIZE_1,
-                        crc32: CRC32_1,
-                    },
-                )
+            let update = index
+                .update_one(&file_path.clone(), resource_id_1())
                 .expect("Should update index successfully");
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 0);
+            assert_eq!(index.root, root_path.clone());
+            assert_eq!(index.path2id.len(), 0);
+            assert_eq!(index.id2path.len(), 0);
+            assert_eq!(index.collisions.len(), 0);
+            assert_eq!(index.size(), 0);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 0);
 
             assert!(update.deleted.contains(&ResourceId {
-                data_size: FILE_SIZE_1,
+                data_size: DATA_SIZE_1,
                 crc32: CRC32_1
             }))
         })
     }
 
     #[test]
-    fn update_all_should_error_on_files_without_permissions() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            let (file, _) = create_file_at(
-                path.clone(),
-                Some(FILE_SIZE_2),
-                Some(FILE_NAME_2),
-            );
-
-            let mut actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            #[cfg(target_os = "linux")]
-            file.set_permissions(Permissions::from_mode(0o222))
-                .expect("Should be fine");
-
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
-
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 0);
-        })
-    }
-
-    // error cases
-
-    #[test]
     fn update_one_should_not_update_absent_path() {
         run_test_and_clean_up(|path| {
+            let mut index = ResourceIndex::build(path.clone());
+
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
-            let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
-                data_size: 1,
-                crc32: 2,
-            };
-            let result = actual
-                .update_one(&missing_path, old_id)
-                .map(|i| i.deleted.clone().take(&old_id))
-                .ok()
-                .flatten();
 
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    crc32: 2,
-                })
+            let result = index.update_one(&missing_path, resource_id_1());
+
+            assert!(result.is_err());
+        })
+    }
+
+    #[test]
+    fn update_one_should_index_modified_paths() {
+        run_test_and_clean_up(|root_path| {
+            let (mut file, file_path) = create_file_at(
+                root_path.clone(),
+                Some(DATA_SIZE_1),
+                Some(FILE_NAME_1),
             );
-        })
-    }
+            let mut index = ResourceIndex::build(root_path.clone());
 
-    #[test]
-    fn update_one_should_index_new_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
-                data_size: 1,
-                crc32: 2,
-            };
-            let result = actual
-                .update_one(&missing_path, old_id)
-                .map(|i| i.deleted.clone().take(&old_id))
-                .ok()
-                .flatten();
+            modify_file(&mut file);
 
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    crc32: 2,
-                })
-            );
-        })
-    }
+            let result = index
+                .update_one(&file_path, resource_id_1())
+                .unwrap();
 
-    #[test]
-    fn should_not_index_empty_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(0), None);
-            let actual = ResourceIndex::build(path.clone());
+            assert_eq!(result.deleted.len(), 1);
+            assert_eq!(result.added.len(), 1);
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
-    }
+            let deleted = result.deleted.into_iter().next().unwrap();
+            let added = result.added.into_iter().next().unwrap();
 
-    #[test]
-    fn should_not_index_hidden_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
-            let actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
-    }
-
-    #[test]
-    fn should_not_index_1_empty_directory() {
-        run_test_and_clean_up(|path| {
-            create_dir_at(path.clone());
-
-            let actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
+            assert_eq!(deleted.data_size, DATA_SIZE_1);
+            assert_eq!(deleted.crc32, CRC32_1);
+            assert_eq!(added.0.as_path(), file_path.as_path());
+            assert_eq!(added.1.data_size, MODIFIED_SIZE);
         })
     }
 
