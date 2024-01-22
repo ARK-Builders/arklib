@@ -389,18 +389,14 @@ impl ResourceIndex {
         let path_buf = CanonicalPathBuf::canonicalize(path)?;
         let path = path_buf.as_canonical_path();
 
-        return match fs::metadata(path) {
-            Err(_) => {
-                return Err(ArklibError::Path(
-                    "Couldn't to retrieve file metadata".into(),
-                ));
-            }
+        match fs::metadata(path) {
+            Err(_) => Err(ArklibError::Path(
+                "Couldn't to retrieve file metadata".into(),
+            )),
             Ok(metadata) => match scan_entry(path, metadata) {
-                Err(_) => {
-                    return Err(ArklibError::Path(
-                        "The path points to a directory or empty file".into(),
-                    ));
-                }
+                Err(_) => Err(ArklibError::Path(
+                    "The path points to a directory or empty file".into(),
+                )),
                 Ok(entry) => {
                     let result = IndexUpdate::added(path_buf.clone(), entry.id);
                     self.insert_entry(path_buf, entry);
@@ -408,7 +404,7 @@ impl ResourceIndex {
                     Ok(result)
                 }
             },
-        };
+        }
     }
 
     // The caller must ensure that:
@@ -430,7 +426,7 @@ impl ResourceIndex {
         let indexed_path = indexed_path.unwrap().clone();
         self.forget_entry(indexed_path.as_canonical_path(), id);
 
-        return Ok(IndexUpdate::deleted(id));
+        Ok(IndexUpdate::deleted(id))
     }
 
     // The caller must ensure that:
