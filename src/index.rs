@@ -369,14 +369,14 @@ impl ResourceIndex {
                     ));
                 }
                 Ok(new_entry) => {
-                    let id = new_entry.id;
+                    let id = new_entry.clone().id;
 
                     if let Some(nonempty) = self.collisions.get_mut(&id) {
                         *nonempty += 1;
                     }
 
                     let mut added = HashMap::new();
-                    added.insert(path_buf.clone(), id);
+                    added.insert(path_buf.clone(), id.clone());
 
                     self.id2path.insert(id, path_buf.clone());
                     self.path2id.insert(path_buf, new_entry);
@@ -432,8 +432,9 @@ impl ResourceIndex {
 
                         let curr_entry = &self.path2id.get(path);
                         if curr_entry.is_none() {
-                            // if the path is not indexed, then we can't have `old_id`
-                            // if you want to index new path, use `index_new` method
+                            // if the path is not indexed, then we can't have
+                            // `old_id` if you want
+                            // to index new path, use `index_new` method
                             return Err(ArklibError::Path(
                                 "Couldn't find the path in the index".into(),
                             ));
@@ -448,7 +449,8 @@ impl ResourceIndex {
                                 log::warn!("path {:?} was modified but not its content", &path);
                             }
 
-                            // the caller must have ensured that the path was indeed update
+                            // the caller must have ensured that the path was
+                            // indeed update
                             return Err(ArklibError::Collision(
                                 "New content has the same id".into(),
                             ));
@@ -458,7 +460,7 @@ impl ResourceIndex {
                         self.forget_path(path, old_id).map(|mut update| {
                             update
                                 .added
-                                .insert(path_buf.clone(), new_entry.id);
+                                .insert(path_buf.clone(), new_entry.clone().id);
                             self.insert_entry(path_buf, new_entry);
 
                             update
@@ -496,10 +498,10 @@ impl ResourceIndex {
 
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
-        let id = entry.id;
+        let id = entry.clone().id;
 
         if let std::collections::hash_map::Entry::Vacant(e) =
-            self.id2path.entry(id)
+            self.id2path.entry(id.clone())
         {
             e.insert(path.clone());
         } else if let Some(nonempty) = self.collisions.get_mut(&id) {
@@ -542,8 +544,9 @@ impl ResourceIndex {
                 });
 
             if let Some(collided_path) = maybe_collided_path {
-                let old_path =
-                    self.id2path.insert(old_id, collided_path.clone());
+                let old_path = self
+                    .id2path
+                    .insert(old_id.clone(), collided_path.clone());
 
                 debug_assert_eq!(
                     old_path.unwrap().as_canonical_path(),
@@ -683,8 +686,10 @@ mod tests {
     const FILE_NAME_2: &str = "test2.txt";
     const FILE_NAME_3: &str = "test3.txt";
 
-    const CRC32_1: u32 = 3817498742;
-    const CRC32_2: u32 = 1804055020;
+    const BLAKE3_1: &str =
+        "40772e14b7665a8e7f09de41da09c4191acac132a598e4e363d076e19077057a";
+    const BLAKE3_2: &str =
+        "cae9b7f152d1262967980b77eb383b12796a8319bd154d36f75dc9f06cd2a69a";
 
     fn get_temp_dir() -> PathBuf {
         create_dir_at(std::env::temp_dir())
@@ -744,7 +749,7 @@ mod tests {
             assert_eq!(actual.id2path.len(), 1);
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
+                blake3: BLAKE3_1.to_string(),
             }));
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 1);
@@ -764,7 +769,7 @@ mod tests {
             assert_eq!(actual.id2path.len(), 1);
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
+                blake3: BLAKE3_1.to_string(),
             }));
             assert_eq!(actual.collisions.len(), 1);
             assert_eq!(actual.size(), 2);
@@ -822,11 +827,11 @@ mod tests {
             assert_eq!(actual.id2path.len(), 2);
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
+                blake3: BLAKE3_1.to_string(),
             }));
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
+                blake3: BLAKE3_2.to_string(),
             }));
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
@@ -844,7 +849,7 @@ mod tests {
                     .clone(),
                 ResourceId {
                     data_size: FILE_SIZE_2,
-                    crc32: CRC32_2
+                    blake3: BLAKE3_2.to_string()
                 }
             )
         })
@@ -868,11 +873,11 @@ mod tests {
             assert_eq!(index.id2path.len(), 2);
             assert!(index.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
+                blake3: BLAKE3_1.to_string(),
             }));
             assert!(index.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
+                blake3: BLAKE3_2.to_string(),
             }));
             assert_eq!(index.collisions.len(), 0);
             assert_eq!(index.size(), 2);
@@ -889,7 +894,7 @@ mod tests {
                     .clone(),
                 ResourceId {
                     data_size: FILE_SIZE_2,
-                    crc32: CRC32_2
+                    blake3: BLAKE3_2.to_string()
                 }
             )
         })
@@ -908,7 +913,7 @@ mod tests {
                 &new_path,
                 ResourceId {
                     data_size: FILE_SIZE_2,
-                    crc32: CRC32_2,
+                    blake3: BLAKE3_2.to_string(),
                 },
             );
 
@@ -933,7 +938,7 @@ mod tests {
                     &file_path.clone(),
                     ResourceId {
                         data_size: FILE_SIZE_1,
-                        crc32: CRC32_1,
+                        blake3: BLAKE3_1.to_string(),
                     },
                 )
                 .expect("Should update index successfully");
@@ -948,7 +953,7 @@ mod tests {
 
             assert!(update.deleted.contains(&ResourceId {
                 data_size: FILE_SIZE_1,
-                crc32: CRC32_1
+                blake3: BLAKE3_1.to_string(),
             }))
         })
     }
@@ -992,10 +997,10 @@ mod tests {
             let mut actual = ResourceIndex::build(path.clone());
             let old_id = ResourceId {
                 data_size: 1,
-                crc32: 2,
+                blake3: BLAKE3_1.to_string(),
             };
             let result = actual
-                .update_one(&missing_path, old_id)
+                .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
@@ -1004,7 +1009,7 @@ mod tests {
                 result,
                 Some(ResourceId {
                     data_size: 1,
-                    crc32: 2,
+                    blake3: BLAKE3_1.to_string(),
                 })
             );
         })
@@ -1018,10 +1023,10 @@ mod tests {
             let mut actual = ResourceIndex::build(path.clone());
             let old_id = ResourceId {
                 data_size: 1,
-                crc32: 2,
+                blake3: BLAKE3_1.to_string(),
             };
             let result = actual
-                .update_one(&missing_path, old_id)
+                .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
@@ -1030,7 +1035,7 @@ mod tests {
                 result,
                 Some(ResourceId {
                     data_size: 1,
-                    crc32: 2,
+                    blake3: BLAKE3_1.to_string(),
                 })
             );
         })
@@ -1091,14 +1096,14 @@ mod tests {
         let old1 = IndexEntry {
             id: ResourceId {
                 data_size: 1,
-                crc32: 2,
+                blake3: "2".to_string(),
             },
             modified: SystemTime::UNIX_EPOCH,
         };
         let old2 = IndexEntry {
             id: ResourceId {
                 data_size: 2,
-                crc32: 1,
+                blake3: "1".to_string(),
             },
             modified: SystemTime::UNIX_EPOCH,
         };
@@ -1106,14 +1111,14 @@ mod tests {
         let new1 = IndexEntry {
             id: ResourceId {
                 data_size: 1,
-                crc32: 1,
+                blake3: "1".to_string(),
             },
             modified: SystemTime::now(),
         };
         let new2 = IndexEntry {
             id: ResourceId {
                 data_size: 1,
-                crc32: 2,
+                blake3: "2".to_string(),
             },
             modified: SystemTime::now(),
         };

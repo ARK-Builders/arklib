@@ -80,15 +80,15 @@ mod tests {
         log::debug!("temporary root: {}", root.display());
 
         let id = ResourceId {
-            crc32: 0x342a3d4a,
             data_size: 1,
+            blake3: "abc".to_string(),
         };
 
         let mut meta = TestMetadata::new();
         meta.insert("abc".to_string(), "def".to_string());
         meta.insert("xyz".to_string(), "123".to_string());
 
-        store_metadata(root, id, &meta).unwrap();
+        store_metadata(root, id.clone(), &meta).unwrap();
 
         let bytes = load_raw_metadata(root, id).unwrap();
         let prop2: TestMetadata = serde_json::from_slice(&bytes).unwrap();

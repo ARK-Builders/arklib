@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use crc32fast::Hasher;
+use blake3::Hasher as Blake3Hasher;
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -12,25 +12,17 @@ use std::str::FromStr;
 use crate::{ArklibError, Result};
 
 #[derive(
-    Eq,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Hash,
-    Clone,
-    Copy,
-    Debug,
-    Deserialize,
-    Serialize,
+    Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug, Deserialize, Serialize,
 )]
 pub struct ResourceId {
     pub data_size: u64,
-    pub crc32: u32,
+    /// blake3 hash (hex string)
+    pub blake3: String,
 }
 
 impl Display for ResourceId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.data_size, self.crc32)
+        write!(f, "{}-{}", self.data_size, self.blake3)
     }
 }
 
@@ -40,9 +32,9 @@ impl FromStr for ResourceId {
     fn from_str(s: &str) -> Result<Self> {
         let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
+        let blake3 = r.to_string();
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId { data_size, blake3 })
     }
 }
 
@@ -68,7 +60,7 @@ impl ResourceId {
     pub fn compute_bytes(bytes: &[u8]) -> Result<Self> {
         let data_size = bytes.len().try_into().map_err(|_| {
             ArklibError::Other(anyhow!("Can't convert usize to u64"))
-        })?; //.unwrap();
+        })?;
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
         ResourceId::compute_reader(data_size, &mut reader)
     }
@@ -84,7 +76,7 @@ impl ResourceId {
             data_size / MEGABYTE
         );
 
-        let mut hasher = Hasher::new();
+        let mut hasher = Blake3Hasher::new();
         let mut bytes_read: u32 = 0;
         loop {
             let bytes_read_iteration: usize = reader.fill_buf()?.len();
@@ -99,12 +91,12 @@ impl ResourceId {
                 })?;
         }
 
-        let crc32: u32 = hasher.finalize();
+        let blake3 = hasher.finalize().to_hex().to_string();
         log::trace!("[compute] {} bytes has been read", bytes_read);
-        log::trace!("[compute] checksum: {:#02x}", crc32);
+        log::trace!("[compute] blake3 hash: {}", blake3);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId { data_size, blake3 })
     }
 }
 
@@ -133,12 +125,18 @@ mod tests {
             .len();
 
         let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.crc32, 0x342a3d4a);
+        assert_eq!(
+            id1.blake3,
+            "172b4bf148e858b13dde0fc6613413bcb7552e5c4e5c45195ac6c80f20eb5ff5"
+        );
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.crc32, 0x342a3d4a);
+        assert_eq!(
+            id2.blake3,
+            "172b4bf148e858b13dde0fc6613413bcb7552e5c4e5c45195ac6c80f20eb5ff5"
+        );
         assert_eq!(id2.data_size, 128760);
     }
 
@@ -146,11 +144,11 @@ mod tests {
     fn resource_id_order() {
         let id1 = ResourceId {
             data_size: 1,
-            crc32: 2,
+            blake3: "172b4bf148e858b13dde0fc6613413bcb7552e5c4e5c45195ac6c80f20eb5ff5".to_string(),
         };
         let id2 = ResourceId {
             data_size: 2,
-            crc32: 1,
+            blake3: "172b4bf148e858b13dde0fc6613413bcb7552e5c4e5c45195ac6c80f20eb5ff5".to_string(),
         };
 
         assert!(id1 < id2);

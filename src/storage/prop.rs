@@ -27,7 +27,8 @@ pub fn store_properties<
         let new_value = serde_json::to_value(properties).unwrap();
         match current_data {
             Some(old_data) => {
-                // Should not failed unless serialize failed which should never happen
+                // Should not failed unless serialize failed which should never
+                // happen
                 let old_value = serde_json::to_value(old_data).unwrap();
                 *current_data = Some(merge(old_value, new_value));
             }
@@ -80,15 +81,15 @@ mod tests {
         log::debug!("temporary root: {}", root.display());
 
         let id = ResourceId {
-            crc32: 0x342a3d4a,
             data_size: 1,
+            blake3: "abc".to_string(),
         };
 
         let mut prop = TestProperties::new();
         prop.insert("abc".to_string(), "def".to_string());
         prop.insert("xyz".to_string(), "123".to_string());
 
-        store_properties(root, id, &prop).unwrap();
+        store_properties(root, id.clone(), &prop).unwrap();
 
         let bytes = load_raw_properties(root, id).unwrap();
         let prop2: TestProperties = serde_json::from_slice(&bytes).unwrap();
