@@ -38,6 +38,8 @@ uuid = { version = "1.6.1", features = ["v4"] }
 [dev-dependencies]
 tempdir = "0.3.7"
 rstest = '0.18.2'
+# benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [build-dependencies]
 flate2 = "1.0.24"
@@ -47,3 +49,8 @@ tar = "0.4.38"
 target-lexicon = "0.12.4"
 ureq = "2.4.0"
 ring = "=0.17.5"
+
+[[bench]]
+name = "hash_benchmark"
+harness = false
+path = "benches/hash_benchmark.rs"
