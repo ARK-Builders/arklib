@@ -668,6 +668,7 @@ mod tests {
     use crate::initialize;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
+    use std::default;
     use std::fs::File;
     #[cfg(target_os = "linux")]
     use std::fs::Permissions;
@@ -1130,5 +1131,162 @@ mod tests {
         assert!(new2 > new1);
     }
 
-    
+    const FILE_DIR_1: &str = "folder_1";
+    const FILE_DIR_2: &str = "folder_2";
+    const FILE_NAME: &str = "test_";
+    const FILE_COUNT: i32 = 10;
+
+    fn generate_random_update(
+        root_path: PathBuf,
+        folder_name: Option<&str>,
+        name: Option<&str>,
+    ) -> i32 {
+
+        let mut rng = rand::thread_rng();
+        let mut rnd_num = rng.gen_range(1..=4);
+
+        let mut folder_1 = root_path.clone();
+        let mut folder_2 = root_path.clone();
+        folder_1.push(FILE_DIR_1);
+        folder_2.push(FILE_DIR_2);
+
+        let mut cur_file_name = "";
+        let mut cur_file_path = folder_1.clone();
+        if let Some(file_name) = name {
+            cur_file_name = file_name.clone();
+            cur_file_path.push(file_name);
+        }
+
+        match rnd_num {
+            // create
+            1 => {
+                let mut file_name_new = String::from(cur_file_name);
+                file_name_new.push_str("_new.txt");
+                create_file_at(
+                    folder_1.clone(),
+                    Some(DATA_SIZE_2),
+                    Some(&file_name_new),
+                );
+            }
+            // update
+            2 => {
+                let mut file = File::create(cur_file_path.as_path())
+                    .expect("Unable to create file");
+                modify_file(&mut file);
+            }
+            // delete
+            3 => {
+                std::fs::remove_file(cur_file_path.clone())
+                    .expect("Should remove file successfully");
+            }
+            // move
+            4 => {
+                let mut name_to = folder_2.clone();
+                name_to.push(cur_file_name);
+                std::fs::rename(cur_file_path, name_to)
+                    .expect("Should rename file successfully");
+            }
+            _ => println!("rnd_num error"),
+        }
+
+        return rnd_num;
+    }
+
+    fn init_tmp_directory(root_path: PathBuf) {
+        let mut folder_1 = root_path.clone();
+        let mut folder_2 = root_path.clone();
+        folder_1.push(FILE_DIR_1);
+        folder_2.push(FILE_DIR_2);
+
+        std::fs::create_dir(&folder_1).expect("Could not create temp dir");
+        std::fs::create_dir(&folder_2).expect("Could not create temp dir");
+
+        for i in 1..FILE_COUNT {
+            let data_size: u64 = (i + 10).try_into().unwrap();
+            let mut create_file_name = String::from(FILE_NAME);
+            create_file_name.push_str(&i.to_string());
+            create_file_name.push_str(".txt");
+
+            let (_, new_path) = create_file_at(
+                folder_1.clone(),
+                Some(data_size),
+                Some(&create_file_name),
+            );
+        }
+    }
+
+    #[test]
+    fn update_all_compare_track_one_methods() {
+        run_test_and_clean_up(|path| {
+            // Initial folders and files are created in this function.
+            init_tmp_directory(path.clone());
+            let initial_index = ResourceIndex::build(path.clone());
+            let mut index1 = initial_index.clone();
+            let mut index2 = initial_index.clone();
+
+            for i in 1..FILE_COUNT {
+
+                let mut file_name = String::from("test_");
+                file_name.push_str(&i.to_string());
+                file_name.push_str(".txt");
+
+                let mut file_path = path.clone();
+                let mut move_file_path = path.clone();
+                file_path.push(FILE_DIR_1);
+                file_path.push(file_name.clone());
+
+                move_file_path.push(FILE_DIR_2);
+                move_file_path.push(file_name.clone());
+
+                let old_id: ResourceId;
+                match CanonicalPathBuf::canonicalize(&file_path) {
+                    Ok(canonicalized_path) => {
+                        old_id = initial_index.path2id
+                            [&canonicalized_path.clone()]
+                            .id;
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            "File {} not found",
+                            file_path.to_str().unwrap_or("no_path_buf")
+                        );
+                        continue;
+                    }
+                }
+
+                let update_state = generate_random_update(
+                    path.clone(),
+                    Some(FILE_DIR_1),
+                    Some(&file_name),
+                );
+
+                match update_state {
+                    // create
+                    1 => {
+                        index1.track_addition(&file_path);
+                    }
+                    // update
+                    2 => {
+                        index1.track_update(&file_path, old_id);
+                    }
+                    // delete
+                    3 => {
+                        index1.track_deletion(old_id);
+                    }
+                    //move
+                    4 => {
+                        index1.track_deletion(old_id);
+                        index1.track_addition(&move_file_path);
+                    }
+                    _ => println!("rnd_num error"),
+                }
+            }
+
+            index2
+                .update_all()
+                .expect("Should update index correctly");
+
+             assert_eq!(index1, index2);
+        })
+    }
 }
