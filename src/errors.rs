@@ -10,8 +10,6 @@ pub enum ArklibError {
     Io(#[from] std::io::Error),
     #[error("Path error: {0}")]
     Path(String),
-    #[error("There is some collision: {0}")]
-    Collision(String),
     #[error("Parsing error")]
     Parse,
     #[error("Networking error")]

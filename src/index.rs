@@ -26,7 +26,6 @@ pub struct ResourceIndex {
     pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
 
-    pub collisions: HashMap<ResourceId, usize>,
     root: PathBuf,
 }
 
@@ -42,7 +41,6 @@ pub type Paths = HashSet<CanonicalPathBuf>;
 
 impl ResourceIndex {
     pub fn size(&self) -> usize {
-        //the actual size is lower in presence of collisions
         self.path2id.len()
     }
 
@@ -56,7 +54,6 @@ impl ResourceIndex {
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
             path2id: HashMap::new(),
-            collisions: HashMap::new(),
             root: root_path,
         };
 
@@ -77,7 +74,6 @@ impl ResourceIndex {
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
             path2id: HashMap::new(),
-            collisions: HashMap::new(),
             root: root_path.clone(),
         };
 
@@ -292,18 +288,13 @@ impl ResourceIndex {
                 if let Some(entry) =
                     self.path2id.remove(path.as_canonical_path())
                 {
-                    let k = self.collisions.remove(&entry.id).unwrap_or(1);
-                    if k > 1 {
-                        self.collisions.insert(entry.id, k - 1);
-                    } else {
-                        log::trace!(
-                            "[delete] {} by path {}",
-                            entry.id,
-                            path.display()
-                        );
-                        self.id2path.remove(&entry.id);
-                        deleted.insert(entry.id);
-                    }
+                    log::trace!(
+                        "[delete] {} by path {}",
+                        entry.id,
+                        path.display()
+                    );
+                    self.id2path.remove(&entry.id);
+                    deleted.insert(entry.id);
                 } else {
                     log::warn!("Path {} was not known", path.display());
                 }
@@ -371,10 +362,6 @@ impl ResourceIndex {
                 Ok(new_entry) => {
                     let id = new_entry.clone().id;
 
-                    if let Some(nonempty) = self.collisions.get_mut(&id) {
-                        *nonempty += 1;
-                    }
-
                     let mut added = HashMap::new();
                     added.insert(path_buf.clone(), id.clone());
 
@@ -439,22 +426,6 @@ impl ResourceIndex {
                                 "Couldn't find the path in the index".into(),
                             ));
                         }
-                        let curr_entry = curr_entry.unwrap();
-
-                        if curr_entry.id == new_entry.id {
-                            // in rare cases we are here due to hash collision
-                            if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was not modified", &path);
-                            } else {
-                                log::warn!("path {:?} was modified but not its content", &path);
-                            }
-
-                            // the caller must have ensured that the path was
-                            // indeed update
-                            return Err(ArklibError::Collision(
-                                "New content has the same id".into(),
-                            ));
-                        }
 
                         // new resource exists by the path
                         self.forget_path(path, old_id).map(|mut update| {
@@ -504,10 +475,6 @@ impl ResourceIndex {
             self.id2path.entry(id.clone())
         {
             e.insert(path.clone());
-        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
-            *nonempty += 1;
-        } else {
-            self.collisions.insert(id, 2);
         }
 
         self.path2id.insert(path, entry);
@@ -520,47 +487,7 @@ impl ResourceIndex {
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
-        if let Some(collisions) = self.collisions.get_mut(&old_id) {
-            debug_assert!(
-                *collisions > 1,
-                "Any collision must involve at least 2 resources"
-            );
-            *collisions -= 1;
-
-            if *collisions == 1 {
-                self.collisions.remove(&old_id);
-            }
-
-            // minor performance issue:
-            // we must find path of one of the collided
-            // resources and use it as new value
-            let maybe_collided_path =
-                self.path2id.iter().find_map(|(path, entry)| {
-                    if entry.id == old_id {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                });
-
-            if let Some(collided_path) = maybe_collided_path {
-                let old_path = self
-                    .id2path
-                    .insert(old_id.clone(), collided_path.clone());
-
-                debug_assert_eq!(
-                    old_path.unwrap().as_canonical_path(),
-                    path,
-                    "Must forget the requested path"
-                );
-            } else {
-                return Err(ArklibError::Collision(
-                    "Illegal state of collision tracker".into(),
-                ));
-            }
-        } else {
-            self.id2path.remove(&old_id);
-        }
+        self.id2path.remove(&old_id);
 
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
@@ -751,33 +678,11 @@ mod tests {
                 data_size: FILE_SIZE_1,
                 blake3: BLAKE3_1.to_string(),
             }));
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 1);
         })
     }
 
-    #[test]
-    fn index_build_should_process_colliding_files_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-
-            let actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                blake3: BLAKE3_1.to_string(),
-            }));
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 2);
-        })
-    }
-
     // resource index update
-
     #[test]
     fn update_all_should_handle_renamed_file_correctly() {
         run_test_and_clean_up(|path| {
@@ -786,7 +691,6 @@ mod tests {
 
             let mut actual = ResourceIndex::build(path.clone());
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
 
             // rename test2.txt to test3.txt
@@ -801,7 +705,6 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 1);
@@ -833,7 +736,6 @@ mod tests {
                 data_size: FILE_SIZE_2,
                 blake3: BLAKE3_2.to_string(),
             }));
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
@@ -879,7 +781,6 @@ mod tests {
                 data_size: FILE_SIZE_2,
                 blake3: BLAKE3_2.to_string(),
             }));
-            assert_eq!(index.collisions.len(), 0);
             assert_eq!(index.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
@@ -946,7 +847,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 0);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 0);
@@ -970,7 +870,6 @@ mod tests {
 
             let mut actual = ResourceIndex::build(path.clone());
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             #[cfg(target_os = "linux")]
             file.set_permissions(Permissions::from_mode(0o222))
@@ -980,7 +879,6 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 0);
@@ -1050,7 +948,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
         })
     }
 
@@ -1063,7 +960,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
         })
     }
 
@@ -1077,7 +973,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
         })
     }
 
