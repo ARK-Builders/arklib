@@ -1289,4 +1289,29 @@ mod tests {
              assert_eq!(index1, index2);
         })
     }
+
+    #[test]
+    fn update_all_compare_track_addition() 
+    {
+        run_test_and_clean_up(|path| {
+            
+            create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
+            
+            let initial_index = ResourceIndex::build(path.clone());
+            let mut index_track_addition = initial_index.clone();
+            let mut index_update_all = initial_index.clone();
+           
+            create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_2));
+
+            let mut added_file_path = path.clone();
+            added_file_path.push(FILE_NAME_2);
+            index_track_addition.track_addition(&added_file_path);
+
+            index_update_all
+                .update_all()
+                .expect("Should update index correctly");
+            
+            assert_eq!(index_track_addition, index_update_all);
+        })
+    }
 }
