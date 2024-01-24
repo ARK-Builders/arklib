@@ -665,7 +665,7 @@ fn is_hidden(entry: &DirEntry) -> bool {
 mod tests {
     use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
-    use crate::initialize;
+    use crate::{initialize, modify};
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::default;
@@ -1263,20 +1263,20 @@ mod tests {
                 match update_state {
                     // create
                     1 => {
-                        index1.track_addition(&file_path);
+                        let _ = index1.track_addition(&file_path);
                     }
                     // update
                     2 => {
-                        index1.track_update(&file_path, old_id);
+                        let _ = index1.track_update(&file_path, old_id);
                     }
                     // delete
                     3 => {
-                        index1.track_deletion(old_id);
+                        let _ = index1.track_deletion(old_id);
                     }
                     //move
                     4 => {
-                        index1.track_deletion(old_id);
-                        index1.track_addition(&move_file_path);
+                        let _ = index1.track_deletion(old_id);
+                        let _ = index1.track_addition(&move_file_path);
                     }
                     _ => println!("rnd_num error"),
                 }
@@ -1305,13 +1305,36 @@ mod tests {
 
             let mut added_file_path = path.clone();
             added_file_path.push(FILE_NAME_2);
-            index_track_addition.track_addition(&added_file_path);
+            let _ = index_track_addition.track_addition(&added_file_path);
 
             index_update_all
                 .update_all()
                 .expect("Should update index correctly");
             
-            assert_eq!(index_track_addition, index_update_all);
+            assert_eq!(index_track_addition , index_update_all);
+        })
+    }
+
+    // The value of ResourceIndex does not change after the file is modified.
+    #[test]
+    fn after_file_modified_value_of_index_initail_does_no_changed() 
+    {
+        run_test_and_clean_up(|path| {
+            
+            create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
+            let (mut file, _) =  create_file_at(path.clone(), Some(DATA_SIZE_2), Some(FILE_NAME_2));
+            
+            let initial_index = ResourceIndex::build(path.clone());
+            let mut index_update_all = initial_index.clone();
+            
+            modify_file(&mut file);
+
+            index_update_all
+                .update_all()
+                .expect("Should update index correctly");
+
+            assert_eq!(initial_index , index_update_all);
+            assert!(initial_index != index_update_all);
         })
     }
 }
