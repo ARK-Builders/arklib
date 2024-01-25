@@ -105,13 +105,13 @@ impl Link {
         let bytes = self.url.as_str().as_bytes();
         temp_and_move(bytes, root.as_ref(), &id_string)?;
         //User defined properties
-        store_properties(&root, id.clone(), &self.prop)?;
+        store_properties(&root, id, &self.prop)?;
 
         // Generated data
         if let Ok(graph) = self.get_preview().await {
             log::debug!("Trying to save: {with_preview} with {graph:?}");
 
-            store_metadata(&root, id.clone(), &graph)?;
+            store_metadata(&root, id, &graph)?;
             if with_preview {
                 if let Some(preview_data) = graph.fetch_image().await {
                     self.save_preview(root, preview_data, &id)?;

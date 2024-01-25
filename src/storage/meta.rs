@@ -81,14 +81,18 @@ mod tests {
 
         let id = ResourceId {
             data_size: 1,
-            blake3: "abc".to_string(),
+            blake3: [
+                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245,
+            ],
         };
 
         let mut meta = TestMetadata::new();
         meta.insert("abc".to_string(), "def".to_string());
         meta.insert("xyz".to_string(), "123".to_string());
 
-        store_metadata(root, id.clone(), &meta).unwrap();
+        store_metadata(root, id, &meta).unwrap();
 
         let bytes = load_raw_metadata(root, id).unwrap();
         let prop2: TestMetadata = serde_json::from_slice(&bytes).unwrap();

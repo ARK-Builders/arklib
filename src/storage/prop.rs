@@ -82,14 +82,18 @@ mod tests {
 
         let id = ResourceId {
             data_size: 1,
-            blake3: "abc".to_string(),
+            blake3: [
+                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245,
+            ],
         };
 
         let mut prop = TestProperties::new();
         prop.insert("abc".to_string(), "def".to_string());
         prop.insert("xyz".to_string(), "123".to_string());
 
-        store_properties(root, id.clone(), &prop).unwrap();
+        store_properties(root, id, &prop).unwrap();
 
         let bytes = load_raw_properties(root, id).unwrap();
         let prop2: TestProperties = serde_json::from_slice(&bytes).unwrap();
