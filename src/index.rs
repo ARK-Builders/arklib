@@ -1313,9 +1313,9 @@ mod tests {
         })
     }
 
-    // The update_all function should run 1ms after the file is modified.
+    // For the update_all function to work correctly, the file must be modified 1 ms after the new file is created.
     #[test]
-    fn update_all_should_run_1ms_after_the_file_is_modified() {
+    fn update_all_work_correctly_the_file_must_be_modified_1ms_after_the_new_file_is_created() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
             let (mut file, _) = create_file_at(
