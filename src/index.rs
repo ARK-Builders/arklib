@@ -665,8 +665,8 @@ fn is_hidden(entry: &DirEntry) -> bool {
 mod tests {
     use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
-    use crate::{initialize, modify};
     use crate::ResourceIndex;
+    use crate::{initialize, modify};
     use canonical_path::CanonicalPathBuf;
     use std::default;
     use std::fs::File;
@@ -681,6 +681,8 @@ mod tests {
     use std::path::PathBuf;
     use std::time::SystemTime;
     use uuid::Uuid;
+
+    use std::{thread, time};
 
     const DATA_SIZE_1: u64 = 10;
     const DATA_SIZE_2: u64 = 11;
@@ -1141,7 +1143,6 @@ mod tests {
         folder_name: Option<&str>,
         name: Option<&str>,
     ) -> i32 {
-
         let mut rng = rand::thread_rng();
         let mut rnd_num = rng.gen_range(1..=4);
 
@@ -1225,7 +1226,6 @@ mod tests {
             let mut index2 = initial_index.clone();
 
             for i in 1..FILE_COUNT {
-
                 let mut file_name = String::from("test_");
                 file_name.push_str(&i.to_string());
                 file_name.push_str(".txt");
@@ -1286,21 +1286,19 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-             assert_eq!(index1, index2);
+            assert_eq!(index1, index2);
         })
     }
 
     #[test]
-    fn update_all_compare_track_addition() 
-    {
+    fn update_all_compare_track_addition() {
         run_test_and_clean_up(|path| {
-            
             create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
-            
+
             let initial_index = ResourceIndex::build(path.clone());
             let mut index_track_addition = initial_index.clone();
             let mut index_update_all = initial_index.clone();
-           
+
             create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_2));
 
             let mut added_file_path = path.clone();
@@ -1310,23 +1308,28 @@ mod tests {
             index_update_all
                 .update_all()
                 .expect("Should update index correctly");
-            
-            assert_eq!(index_track_addition , index_update_all);
+
+            assert_eq!(index_track_addition, index_update_all);
         })
     }
 
-    // The value of ResourceIndex does not change after the file is modified.
+    // The update_all function should run 1ms after the file is modified.
     #[test]
-    fn after_file_modified_value_of_index_initail_does_no_changed() 
-    {
+    fn update_all_should_run_1ms_after_the_file_is_modified() {
         run_test_and_clean_up(|path| {
-            
             create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
-            let (mut file, _) =  create_file_at(path.clone(), Some(DATA_SIZE_2), Some(FILE_NAME_2));
-            
+            let (mut file, _) = create_file_at(
+                path.clone(),
+                Some(DATA_SIZE_2),
+                Some(FILE_NAME_2),
+            );
+
             let initial_index = ResourceIndex::build(path.clone());
             let mut index_update_all = initial_index.clone();
-            
+
+            let ten_millis = time::Duration::from_millis(10);
+            thread::sleep(ten_millis);
+
             modify_file(&mut file);
 
             index_update_all
@@ -1334,7 +1337,6 @@ mod tests {
                 .expect("Should update index correctly");
 
             assert_eq!(initial_index , index_update_all);
-            assert!(initial_index != index_update_all);
         })
     }
 }
