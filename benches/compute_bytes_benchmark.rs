@@ -8,7 +8,7 @@ fn generate_random_data(size: usize) -> Vec<u8> {
     (0..size).map(|_| rng.gen()).collect()
 }
 
-fn compute_bytes_benchmark(c: &mut Criterion) {
+fn compute_bytes_on_raw_data(c: &mut Criterion) {
     let inputs = [
         ("compute_bytes_small", 1024),
         ("compute_bytes_medium", 8192),
@@ -52,7 +52,7 @@ fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    compute_bytes_benchmark,
+    compute_bytes_on_raw_data,
     compute_bytes_on_files_benchmark
 );
 criterion_main!(benches);

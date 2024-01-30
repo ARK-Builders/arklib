@@ -52,6 +52,11 @@ ureq = "2.4.0"
 ring = "=0.17.5"
 
 [[bench]]
-name = "hash_benchmark"
+name = "compute_bytes_benchmark"
 harness = false
-path = "benches/hash_benchmark.rs"
+path = "benches/compute_bytes_benchmark.rs"
+
+[[bench]]
+name = "index_build_benchmark"
+harness = false
+path = "benches/index_build_benchmark.rs"
