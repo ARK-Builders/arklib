@@ -1,6 +1,7 @@
 use arklib::id::ResourceId;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::*;
+use std::fs;
 
 fn generate_random_data(size: usize) -> Vec<u8> {
     let mut rng = rand::thread_rng();
@@ -30,5 +31,28 @@ fn compute_bytes_benchmark(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, compute_bytes_benchmark);
+fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
+    let file_paths = ["tests/lena.jpg", "tests/test.pdf"]; // Add files to benchmark here
+
+    for file_path in file_paths.iter() {
+        let raw_bytes = fs::read(file_path).unwrap();
+        c.bench_function(file_path, move |b| {
+            b.iter(|| {
+                if let Ok(result) =
+                    ResourceId::compute_bytes(black_box(&raw_bytes))
+                {
+                    black_box(result);
+                } else {
+                    panic!("compute_bytes returned an error");
+                }
+            });
+        });
+    }
+}
+
+criterion_group!(
+    benches,
+    compute_bytes_benchmark,
+    compute_bytes_on_files_benchmark
+);
 criterion_main!(benches);
