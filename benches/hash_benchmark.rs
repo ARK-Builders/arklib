@@ -9,9 +9,9 @@ fn generate_random_data(size: usize) -> Vec<u8> {
 
 fn compute_bytes_benchmark(c: &mut Criterion) {
     let inputs = [
-        ("compute_bytes_small", 64),
-        ("compute_bytes_medium", 512),
-        ("compute_bytes_large", 4096),
+        ("compute_bytes_small", 1024),
+        ("compute_bytes_medium", 8192),
+        ("compute_bytes_large", 65536),
     ];
 
     for (name, size) in inputs.iter() {
