@@ -11,42 +11,51 @@ fn generate_random_data(size: usize) -> Vec<u8> {
 fn compute_bytes_on_raw_data(c: &mut Criterion) {
     let inputs = [
         ("compute_bytes_small", 1024),
-        ("compute_bytes_medium", 8192),
-        ("compute_bytes_large", 65536),
+        ("compute_bytes_medium", 65536),
+        ("compute_bytes_large", 1048576),
     ];
 
     for (name, size) in inputs.iter() {
         let input_data = generate_random_data(*size);
-        c.bench_function(name, move |b| {
+        let mut group = c.benchmark_group(name.to_string());
+        group.measurement_time(std::time::Duration::from_secs(5)); // Set the measurement time here
+
+        group.bench_function("compute_bytes", move |b| {
             b.iter(|| {
-                if let Ok(result) =
-                    ResourceId::compute_bytes(black_box(&input_data))
-                {
-                    black_box(result);
-                } else {
-                    panic!("compute_bytes returned an error");
-                }
+                ResourceId::compute_bytes(black_box(&input_data))
+                    .expect("compute_bytes returned an error")
             });
         });
+
+        group.finish();
     }
 }
 
 fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
     let file_paths = ["tests/lena.jpg", "tests/test.pdf"]; // Add files to benchmark here
 
+    // assert the files exist and are files
+    for file_path in file_paths.iter() {
+        assert!(
+            std::path::Path::new(file_path).is_file(),
+            "The file: {} does not exist or is not a file",
+            file_path
+        );
+    }
+
     for file_path in file_paths.iter() {
         let raw_bytes = fs::read(file_path).unwrap();
-        c.bench_function(file_path, move |b| {
+        let mut group = c.benchmark_group(file_path.to_string());
+        group.measurement_time(std::time::Duration::from_secs(10)); // Set the measurement time here
+
+        group.bench_function("compute_bytes", move |b| {
             b.iter(|| {
-                if let Ok(result) =
-                    ResourceId::compute_bytes(black_box(&raw_bytes))
-                {
-                    black_box(result);
-                } else {
-                    panic!("compute_bytes returned an error");
-                }
+                ResourceId::compute_bytes(black_box(&raw_bytes))
+                    .expect("compute_bytes returned an error")
             });
         });
+
+        group.finish();
     }
 }
 
