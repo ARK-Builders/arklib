@@ -680,10 +680,9 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 1);
             assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                blake3: BLAKE3_1,
-            }));
+            assert!(actual
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_1 }));
             assert_eq!(actual.size(), 1);
         })
     }
@@ -734,14 +733,12 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 2);
             assert_eq!(actual.id2path.len(), 2);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                blake3: BLAKE3_1,
-            }));
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_2,
-                blake3: BLAKE3_2,
-            }));
+            assert!(actual
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_1 }));
+            assert!(actual
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_2 }));
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
@@ -755,10 +752,7 @@ mod tests {
                     .get(&added_key)
                     .expect("Key exists")
                     .clone(),
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    blake3: BLAKE3_2
-                }
+                ResourceId { blake3: BLAKE3_2 }
             )
         })
     }
@@ -779,14 +773,12 @@ mod tests {
             assert_eq!(index.root, path.clone());
             assert_eq!(index.path2id.len(), 2);
             assert_eq!(index.id2path.len(), 2);
-            assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                blake3: BLAKE3_1,
-            }));
-            assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_2,
-                blake3: BLAKE3_2,
-            }));
+            assert!(index
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_1 }));
+            assert!(index
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_2 }));
             assert_eq!(index.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
@@ -799,10 +791,7 @@ mod tests {
                     .get(&added_key)
                     .expect("Key exists")
                     .clone(),
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    blake3: BLAKE3_2
-                }
+                ResourceId { blake3: BLAKE3_2 }
             )
         })
     }
@@ -816,13 +805,8 @@ mod tests {
             let (_, new_path) =
                 create_file_at(path.clone(), Some(FILE_SIZE_2), None);
 
-            let update = index.update_one(
-                &new_path,
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    blake3: BLAKE3_2,
-                },
-            );
+            let update =
+                index.update_one(&new_path, ResourceId { blake3: BLAKE3_2 });
 
             assert!(update.is_err())
         })
@@ -841,13 +825,7 @@ mod tests {
                 .expect("Should remove file successfully");
 
             let update = actual
-                .update_one(
-                    &file_path.clone(),
-                    ResourceId {
-                        data_size: FILE_SIZE_1,
-                        blake3: BLAKE3_1,
-                    },
-                )
+                .update_one(&file_path.clone(), ResourceId { blake3: BLAKE3_1 })
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
@@ -857,10 +835,9 @@ mod tests {
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 0);
 
-            assert!(update.deleted.contains(&ResourceId {
-                data_size: FILE_SIZE_1,
-                blake3: BLAKE3_1
-            }))
+            assert!(update
+                .deleted
+                .contains(&ResourceId { blake3: BLAKE3_1 }))
         })
     }
 
@@ -899,23 +876,14 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
-                data_size: 1,
-                blake3: BLAKE3_1,
-            };
+            let old_id = ResourceId { blake3: BLAKE3_1 };
             let result = actual
                 .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
 
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    blake3: BLAKE3_1,
-                })
-            );
+            assert_eq!(result, Some(ResourceId { blake3: BLAKE3_1 }));
         })
     }
 
@@ -925,23 +893,14 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
-                data_size: 1,
-                blake3: BLAKE3_1,
-            };
+            let old_id = ResourceId { blake3: BLAKE3_1 };
             let result = actual
                 .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
 
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    blake3: BLAKE3_1
-                })
-            );
+            assert_eq!(result, Some(ResourceId { blake3: BLAKE3_1 }));
         })
     }
 
@@ -995,32 +954,20 @@ mod tests {
     #[test]
     fn index_entry_order() {
         let old1 = IndexEntry {
-            id: ResourceId {
-                data_size: 1,
-                blake3: BLAKE3_2,
-            },
+            id: ResourceId { blake3: BLAKE3_2 },
             modified: SystemTime::UNIX_EPOCH,
         };
         let old2 = IndexEntry {
-            id: ResourceId {
-                data_size: 2,
-                blake3: BLAKE3_1,
-            },
+            id: ResourceId { blake3: BLAKE3_1 },
             modified: SystemTime::UNIX_EPOCH,
         };
 
         let new1 = IndexEntry {
-            id: ResourceId {
-                data_size: 1,
-                blake3: BLAKE3_1,
-            },
+            id: ResourceId { blake3: BLAKE3_1 },
             modified: SystemTime::now(),
         };
         let new2 = IndexEntry {
-            id: ResourceId {
-                data_size: 1,
-                blake3: BLAKE3_2,
-            },
+            id: ResourceId { blake3: BLAKE3_2 },
             modified: SystemTime::now(),
         };
 
@@ -1032,7 +979,7 @@ mod tests {
         assert_ne!(new1, new2);
         assert_ne!(new1, old1);
 
-        assert!(old2 > old1);
+        assert!(old2 < old1);
         assert!(new1 > old1);
         assert!(new1 > old2);
         assert!(new2 > old1);

@@ -1,4 +1,6 @@
 use anyhow::anyhow;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::engine::Engine as _;
 use blake3::Hasher as Blake3Hasher;
 use log;
 use serde::{Deserialize, Serialize};
@@ -24,13 +26,13 @@ use crate::{ArklibError, Result};
     Serialize,
 )]
 pub struct ResourceId {
-    pub data_size: u64,
     pub blake3: [u8; 32],
 }
 
 impl Display for ResourceId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{:?}", self.data_size, self.blake3)
+        let blake3_str = BASE64.encode(&self.blake3);
+        write!(f, "{}", blake3_str)
     }
 }
 
@@ -38,21 +40,14 @@ impl FromStr for ResourceId {
     type Err = ArklibError;
 
     fn from_str(s: &str) -> Result<Self> {
-        let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
-        let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let s = r.trim_start_matches('[').trim_end_matches(']');
-        let bytes: Vec<&str> = s.split(", ").collect();
-        if bytes.len() != 32 {
-            return Err(ArklibError::Parse);
-        }
-        let mut blake3 = [0u8; 32];
-        for (i, byte_str) in bytes.iter().enumerate() {
-            blake3[i] = byte_str
-                .trim()
-                .parse()
-                .map_err(|_e| ArklibError::Parse)?;
-        }
-        Ok(ResourceId { data_size, blake3 })
+        let blake3 = BASE64
+            .decode(s.as_bytes())
+            .map_err(|_| ArklibError::Parse)?;
+        let mut blake3_array = [0; 32];
+        blake3_array.copy_from_slice(&blake3);
+        Ok(ResourceId {
+            blake3: blake3_array,
+        })
     }
 }
 
@@ -115,7 +110,6 @@ impl ResourceId {
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
         Ok(ResourceId {
-            data_size,
             blake3: blake3.into(),
         })
     }
@@ -139,7 +133,6 @@ mod tests {
         let blake3 = hasher.finalize();
 
         let id = ResourceId {
-            data_size: plain_text.len() as u64,
             blake3: blake3.into(),
         };
 
@@ -172,7 +165,6 @@ mod tests {
                 235, 95, 245
             ]
         );
-        assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
@@ -184,13 +176,11 @@ mod tests {
                 235, 95, 245
             ]
         );
-        assert_eq!(id2.data_size, 128760);
     }
 
     #[test]
     fn resource_id_order() {
         let id1 = ResourceId {
-            data_size: 1,
             blake3: [
                 23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
                 19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
@@ -198,9 +188,8 @@ mod tests {
             ],
         };
         let id2 = ResourceId {
-            data_size: 2,
             blake3: [
-                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                24, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
                 19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
                 235, 95, 245,
             ],
