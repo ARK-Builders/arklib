@@ -1,5 +1,7 @@
 use anyhow::anyhow;
-use crc32fast::Hasher;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::engine::Engine as _;
+use blake3::Hasher as Blake3Hasher;
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -24,13 +26,13 @@ use crate::{ArklibError, Result};
     Serialize,
 )]
 pub struct ResourceId {
-    pub data_size: u64,
-    pub crc32: u32,
+    pub blake3: [u8; 32],
 }
 
 impl Display for ResourceId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.data_size, self.crc32)
+        let blake3_str = BASE64.encode(&self.blake3);
+        write!(f, "{}", blake3_str)
     }
 }
 
@@ -38,11 +40,14 @@ impl FromStr for ResourceId {
     type Err = ArklibError;
 
     fn from_str(s: &str) -> Result<Self> {
-        let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
-        let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
-
-        Ok(ResourceId { data_size, crc32 })
+        let blake3 = BASE64
+            .decode(s.as_bytes())
+            .map_err(|_| ArklibError::Parse)?;
+        let mut blake3_array = [0; 32];
+        blake3_array.copy_from_slice(&blake3);
+        Ok(ResourceId {
+            blake3: blake3_array,
+        })
     }
 }
 
@@ -68,7 +73,7 @@ impl ResourceId {
     pub fn compute_bytes(bytes: &[u8]) -> Result<Self> {
         let data_size = bytes.len().try_into().map_err(|_| {
             ArklibError::Other(anyhow!("Can't convert usize to u64"))
-        })?; //.unwrap();
+        })?;
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
         ResourceId::compute_reader(data_size, &mut reader)
     }
@@ -84,7 +89,7 @@ impl ResourceId {
             data_size / MEGABYTE
         );
 
-        let mut hasher = Hasher::new();
+        let mut hasher = Blake3Hasher::new();
         let mut bytes_read: u32 = 0;
         loop {
             let bytes_read_iteration: usize = reader.fill_buf()?.len();
@@ -99,12 +104,14 @@ impl ResourceId {
                 })?;
         }
 
-        let crc32: u32 = hasher.finalize();
+        let blake3 = hasher.finalize();
         log::trace!("[compute] {} bytes has been read", bytes_read);
-        log::trace!("[compute] checksum: {:#02x}", crc32);
+        log::trace!("[compute] blake3 hash: {}", blake3);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId {
+            blake3: blake3.into(),
+        })
     }
 }
 
@@ -117,6 +124,23 @@ mod tests {
     use crate::initialize;
 
     use super::*;
+
+    #[test]
+    fn resource_id_to_and_from_string() {
+        let plain_text = "Hello, world!";
+        let mut hasher = Blake3Hasher::new();
+        hasher.update(plain_text.as_bytes());
+        let blake3 = hasher.finalize();
+
+        let id = ResourceId {
+            blake3: blake3.into(),
+        };
+
+        let id_str = id.to_string();
+        let id2 = id_str.parse::<ResourceId>().unwrap();
+
+        assert_eq!(id, id2);
+    }
 
     #[test]
     fn compute_id_test() {
@@ -133,24 +157,42 @@ mod tests {
             .len();
 
         let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.crc32, 0x342a3d4a);
-        assert_eq!(id1.data_size, 128760);
+        assert_eq!(
+            id1.blake3,
+            [
+                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245
+            ]
+        );
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.crc32, 0x342a3d4a);
-        assert_eq!(id2.data_size, 128760);
+        assert_eq!(
+            id2.blake3,
+            [
+                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245
+            ]
+        );
     }
 
     #[test]
     fn resource_id_order() {
         let id1 = ResourceId {
-            data_size: 1,
-            crc32: 2,
+            blake3: [
+                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245,
+            ],
         };
         let id2 = ResourceId {
-            data_size: 2,
-            crc32: 1,
+            blake3: [
+                24, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245,
+            ],
         };
 
         assert!(id1 < id2);

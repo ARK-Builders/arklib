@@ -26,7 +26,6 @@ pub struct ResourceIndex {
     pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
 
-    pub collisions: HashMap<ResourceId, usize>,
     root: PathBuf,
 }
 
@@ -42,7 +41,6 @@ pub type Paths = HashSet<CanonicalPathBuf>;
 
 impl ResourceIndex {
     pub fn size(&self) -> usize {
-        //the actual size is lower in presence of collisions
         self.path2id.len()
     }
 
@@ -56,7 +54,6 @@ impl ResourceIndex {
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
             path2id: HashMap::new(),
-            collisions: HashMap::new(),
             root: root_path,
         };
 
@@ -77,7 +74,6 @@ impl ResourceIndex {
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
             path2id: HashMap::new(),
-            collisions: HashMap::new(),
             root: root_path.clone(),
         };
 
@@ -292,18 +288,13 @@ impl ResourceIndex {
                 if let Some(entry) =
                     self.path2id.remove(path.as_canonical_path())
                 {
-                    let k = self.collisions.remove(&entry.id).unwrap_or(1);
-                    if k > 1 {
-                        self.collisions.insert(entry.id, k - 1);
-                    } else {
-                        log::trace!(
-                            "[delete] {} by path {}",
-                            entry.id,
-                            path.display()
-                        );
-                        self.id2path.remove(&entry.id);
-                        deleted.insert(entry.id);
-                    }
+                    log::trace!(
+                        "[delete] {} by path {}",
+                        entry.id,
+                        path.display()
+                    );
+                    self.id2path.remove(&entry.id);
+                    deleted.insert(entry.id);
                 } else {
                     log::warn!("Path {} was not known", path.display());
                 }
@@ -371,10 +362,6 @@ impl ResourceIndex {
                 Ok(new_entry) => {
                     let id = new_entry.id;
 
-                    if let Some(nonempty) = self.collisions.get_mut(&id) {
-                        *nonempty += 1;
-                    }
-
                     let mut added = HashMap::new();
                     added.insert(path_buf.clone(), id);
 
@@ -432,25 +419,11 @@ impl ResourceIndex {
 
                         let curr_entry = &self.path2id.get(path);
                         if curr_entry.is_none() {
-                            // if the path is not indexed, then we can't have `old_id`
-                            // if you want to index new path, use `index_new` method
+                            // if the path is not indexed, then we can't have
+                            // `old_id` if you want
+                            // to index new path, use `index_new` method
                             return Err(ArklibError::Path(
                                 "Couldn't find the path in the index".into(),
-                            ));
-                        }
-                        let curr_entry = curr_entry.unwrap();
-
-                        if curr_entry.id == new_entry.id {
-                            // in rare cases we are here due to hash collision
-                            if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was not modified", &path);
-                            } else {
-                                log::warn!("path {:?} was modified but not its content", &path);
-                            }
-
-                            // the caller must have ensured that the path was indeed update
-                            return Err(ArklibError::Collision(
-                                "New content has the same id".into(),
                             ));
                         }
 
@@ -496,16 +469,12 @@ impl ResourceIndex {
 
     fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
-        let id = entry.id;
+        let id = entry.clone().id;
 
         if let std::collections::hash_map::Entry::Vacant(e) =
             self.id2path.entry(id)
         {
             e.insert(path.clone());
-        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
-            *nonempty += 1;
-        } else {
-            self.collisions.insert(id, 2);
         }
 
         self.path2id.insert(path, entry);
@@ -518,46 +487,7 @@ impl ResourceIndex {
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
 
-        if let Some(collisions) = self.collisions.get_mut(&old_id) {
-            debug_assert!(
-                *collisions > 1,
-                "Any collision must involve at least 2 resources"
-            );
-            *collisions -= 1;
-
-            if *collisions == 1 {
-                self.collisions.remove(&old_id);
-            }
-
-            // minor performance issue:
-            // we must find path of one of the collided
-            // resources and use it as new value
-            let maybe_collided_path =
-                self.path2id.iter().find_map(|(path, entry)| {
-                    if entry.id == old_id {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                });
-
-            if let Some(collided_path) = maybe_collided_path {
-                let old_path =
-                    self.id2path.insert(old_id, collided_path.clone());
-
-                debug_assert_eq!(
-                    old_path.unwrap().as_canonical_path(),
-                    path,
-                    "Must forget the requested path"
-                );
-            } else {
-                return Err(ArklibError::Collision(
-                    "Illegal state of collision tracker".into(),
-                ));
-            }
-        } else {
-            self.id2path.remove(&old_id);
-        }
+        self.id2path.remove(&old_id);
 
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
@@ -683,8 +613,16 @@ mod tests {
     const FILE_NAME_2: &str = "test2.txt";
     const FILE_NAME_3: &str = "test3.txt";
 
-    const CRC32_1: u32 = 3817498742;
-    const CRC32_2: u32 = 1804055020;
+    const BLAKE3_1: [u8; 32] = [
+        64, 119, 46, 20, 183, 102, 90, 142, 127, 9, 222, 65, 218, 9, 196, 25,
+        26, 202, 193, 50, 165, 152, 228, 227, 99, 208, 118, 225, 144, 119, 5,
+        122,
+    ];
+    const BLAKE3_2: [u8; 32] = [
+        202, 233, 183, 241, 82, 209, 38, 41, 103, 152, 11, 119, 235, 56, 59,
+        18, 121, 106, 131, 25, 189, 21, 77, 54, 247, 93, 201, 240, 108, 210,
+        166, 154,
+    ];
 
     fn get_temp_dir() -> PathBuf {
         create_dir_at(std::env::temp_dir())
@@ -742,37 +680,14 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 1);
             assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert_eq!(actual.collisions.len(), 0);
+            assert!(actual
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_1 }));
             assert_eq!(actual.size(), 1);
         })
     }
 
-    #[test]
-    fn index_build_should_process_colliding_files_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-
-            let actual = ResourceIndex::build(path.clone());
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 2);
-        })
-    }
-
     // resource index update
-
     #[test]
     fn update_all_should_handle_renamed_file_correctly() {
         run_test_and_clean_up(|path| {
@@ -781,7 +696,6 @@ mod tests {
 
             let mut actual = ResourceIndex::build(path.clone());
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
 
             // rename test2.txt to test3.txt
@@ -796,7 +710,6 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 1);
@@ -820,15 +733,12 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 2);
             assert_eq!(actual.id2path.len(), 2);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
-            }));
-            assert_eq!(actual.collisions.len(), 0);
+            assert!(actual
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_1 }));
+            assert!(actual
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_2 }));
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
@@ -842,10 +752,7 @@ mod tests {
                     .get(&added_key)
                     .expect("Key exists")
                     .clone(),
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2
-                }
+                ResourceId { blake3: BLAKE3_2 }
             )
         })
     }
@@ -866,15 +773,12 @@ mod tests {
             assert_eq!(index.root, path.clone());
             assert_eq!(index.path2id.len(), 2);
             assert_eq!(index.id2path.len(), 2);
-            assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
-            }));
-            assert_eq!(index.collisions.len(), 0);
+            assert!(index
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_1 }));
+            assert!(index
+                .id2path
+                .contains_key(&ResourceId { blake3: BLAKE3_2 }));
             assert_eq!(index.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
@@ -887,10 +791,7 @@ mod tests {
                     .get(&added_key)
                     .expect("Key exists")
                     .clone(),
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2
-                }
+                ResourceId { blake3: BLAKE3_2 }
             )
         })
     }
@@ -904,13 +805,8 @@ mod tests {
             let (_, new_path) =
                 create_file_at(path.clone(), Some(FILE_SIZE_2), None);
 
-            let update = index.update_one(
-                &new_path,
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2,
-                },
-            );
+            let update =
+                index.update_one(&new_path, ResourceId { blake3: BLAKE3_2 });
 
             assert!(update.is_err())
         })
@@ -929,27 +825,19 @@ mod tests {
                 .expect("Should remove file successfully");
 
             let update = actual
-                .update_one(
-                    &file_path.clone(),
-                    ResourceId {
-                        data_size: FILE_SIZE_1,
-                        crc32: CRC32_1,
-                    },
-                )
+                .update_one(&file_path.clone(), ResourceId { blake3: BLAKE3_1 })
                 .expect("Should update index successfully");
 
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 0);
             assert_eq!(update.deleted.len(), 1);
             assert_eq!(update.added.len(), 0);
 
-            assert!(update.deleted.contains(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1
-            }))
+            assert!(update
+                .deleted
+                .contains(&ResourceId { blake3: BLAKE3_1 }))
         })
     }
 
@@ -965,7 +853,6 @@ mod tests {
 
             let mut actual = ResourceIndex::build(path.clone());
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             #[cfg(target_os = "linux")]
             file.set_permissions(Permissions::from_mode(0o222))
@@ -975,7 +862,6 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 0);
@@ -990,23 +876,14 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
-                data_size: 1,
-                crc32: 2,
-            };
+            let old_id = ResourceId { blake3: BLAKE3_1 };
             let result = actual
-                .update_one(&missing_path, old_id)
+                .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
 
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    crc32: 2,
-                })
-            );
+            assert_eq!(result, Some(ResourceId { blake3: BLAKE3_1 }));
         })
     }
 
@@ -1016,23 +893,14 @@ mod tests {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
             let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
-                data_size: 1,
-                crc32: 2,
-            };
+            let old_id = ResourceId { blake3: BLAKE3_1 };
             let result = actual
-                .update_one(&missing_path, old_id)
+                .update_one(&missing_path, old_id.clone())
                 .map(|i| i.deleted.clone().take(&old_id))
                 .ok()
                 .flatten();
 
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    crc32: 2,
-                })
-            );
+            assert_eq!(result, Some(ResourceId { blake3: BLAKE3_1 }));
         })
     }
 
@@ -1045,7 +913,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
         })
     }
 
@@ -1058,7 +925,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
         })
     }
 
@@ -1072,7 +938,6 @@ mod tests {
             assert_eq!(actual.root, path.clone());
             assert_eq!(actual.path2id.len(), 0);
             assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
         })
     }
 
@@ -1089,32 +954,20 @@ mod tests {
     #[test]
     fn index_entry_order() {
         let old1 = IndexEntry {
-            id: ResourceId {
-                data_size: 1,
-                crc32: 2,
-            },
+            id: ResourceId { blake3: BLAKE3_2 },
             modified: SystemTime::UNIX_EPOCH,
         };
         let old2 = IndexEntry {
-            id: ResourceId {
-                data_size: 2,
-                crc32: 1,
-            },
+            id: ResourceId { blake3: BLAKE3_1 },
             modified: SystemTime::UNIX_EPOCH,
         };
 
         let new1 = IndexEntry {
-            id: ResourceId {
-                data_size: 1,
-                crc32: 1,
-            },
+            id: ResourceId { blake3: BLAKE3_1 },
             modified: SystemTime::now(),
         };
         let new2 = IndexEntry {
-            id: ResourceId {
-                data_size: 1,
-                crc32: 2,
-            },
+            id: ResourceId { blake3: BLAKE3_2 },
             modified: SystemTime::now(),
         };
 
@@ -1126,7 +979,7 @@ mod tests {
         assert_ne!(new1, new2);
         assert_ne!(new1, old1);
 
-        assert!(old2 > old1);
+        assert!(old2 < old1);
         assert!(new1 > old1);
         assert!(new1 > old2);
         assert!(new2 > old1);
