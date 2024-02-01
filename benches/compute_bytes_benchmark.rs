@@ -3,6 +3,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::*;
 use std::fs;
 
+const FILE_PATHS: [&str; 2] = ["tests/lena.jpg", "tests/test.pdf"]; // Add files to benchmark here
+
 fn generate_random_data(size: usize) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     (0..size).map(|_| rng.gen()).collect()
@@ -32,10 +34,8 @@ fn compute_bytes_on_raw_data(c: &mut Criterion) {
 }
 
 fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
-    let file_paths = ["tests/lena.jpg", "tests/test.pdf"]; // Add files to benchmark here
-
     // assert the files exist and are files
-    for file_path in file_paths.iter() {
+    for file_path in FILE_PATHS.iter() {
         assert!(
             std::path::Path::new(file_path).is_file(),
             "The file: {} does not exist or is not a file",
@@ -43,7 +43,7 @@ fn compute_bytes_on_files_benchmark(c: &mut Criterion) {
         );
     }
 
-    for file_path in file_paths.iter() {
+    for file_path in FILE_PATHS.iter() {
         let raw_bytes = fs::read(file_path).unwrap();
         let mut group = c.benchmark_group(file_path.to_string());
         group.measurement_time(std::time::Duration::from_secs(10)); // Set the measurement time here
