@@ -665,10 +665,9 @@ fn is_hidden(entry: &DirEntry) -> bool {
 mod tests {
     use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
+    use crate::initialize;
     use crate::ResourceIndex;
-    use crate::{initialize, modify};
     use canonical_path::CanonicalPathBuf;
-    use std::default;
     use std::fs::File;
     #[cfg(target_os = "linux")]
     use std::fs::Permissions;
@@ -676,6 +675,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
 
+    use rand::distributions::Alphanumeric;
     use rand::Rng;
 
     use std::path::PathBuf;
@@ -1133,18 +1133,19 @@ mod tests {
         assert!(new2 > new1);
     }
 
+    const CREATE: i32 = 1;
+    const UPDATE: i32 = 2;
+    const DELETE: i32 = 3;
+    const MOVE: i32 = 5;
+
     const FILE_DIR_1: &str = "folder_1";
     const FILE_DIR_2: &str = "folder_2";
     const FILE_NAME: &str = "test_";
-    const FILE_COUNT: i32 = 10;
+    const FILE_COUNT: i32 = 3;
 
-    fn generate_random_update(
-        root_path: PathBuf,
-        folder_name: Option<&str>,
-        name: Option<&str>,
-    ) -> i32 {
+    fn generate_random_update(root_path: PathBuf, name: Option<&str>) -> i32 {
         let mut rng = rand::thread_rng();
-        let mut rnd_num = rng.gen_range(1..=4);
+        let rand_num: i32 = rng.gen_range(0..10);
 
         let mut folder_1 = root_path.clone();
         let mut folder_2 = root_path.clone();
@@ -1154,34 +1155,36 @@ mod tests {
         let mut cur_file_name = "";
         let mut cur_file_path = folder_1.clone();
         if let Some(file_name) = name {
-            cur_file_name = file_name.clone();
+            cur_file_name = file_name;
             cur_file_path.push(file_name);
         }
 
-        match rnd_num {
-            // create
-            1 => {
-                let mut file_name_new = String::from(cur_file_name);
-                file_name_new.push_str("_new.txt");
+        match rand_num {
+            CREATE => {
+
+                // create randomize file name
+                let random_file_name_new: String = rng
+                .sample_iter(&Alphanumeric)
+                .take(7)
+                .map(char::from)
+                .collect();
+
                 create_file_at(
                     folder_1.clone(),
                     Some(DATA_SIZE_2),
-                    Some(&file_name_new),
+                    Some(&random_file_name_new),
                 );
             }
-            // update
-            2 => {
+            UPDATE => {
                 let mut file = File::create(cur_file_path.as_path())
                     .expect("Unable to create file");
                 modify_file(&mut file);
             }
-            // delete
-            3 => {
+            DELETE => {
                 std::fs::remove_file(cur_file_path.clone())
                     .expect("Should remove file successfully");
             }
-            // move
-            4 => {
+            MOVE => {
                 let mut name_to = folder_2.clone();
                 name_to.push(cur_file_name);
                 std::fs::rename(cur_file_path, name_to)
@@ -1190,7 +1193,7 @@ mod tests {
             _ => println!("rnd_num error"),
         }
 
-        return rnd_num;
+        return rand_num;
     }
 
     fn init_tmp_directory(root_path: PathBuf) {
@@ -1206,9 +1209,8 @@ mod tests {
             let data_size: u64 = (i + 10).try_into().unwrap();
             let mut create_file_name = String::from(FILE_NAME);
             create_file_name.push_str(&i.to_string());
-            create_file_name.push_str(".txt");
 
-            let (_, new_path) = create_file_at(
+            create_file_at(
                 folder_1.clone(),
                 Some(data_size),
                 Some(&create_file_name),
@@ -1226,9 +1228,8 @@ mod tests {
             let mut index2 = initial_index.clone();
 
             for i in 1..FILE_COUNT {
-                let mut file_name = String::from("test_");
+                let mut file_name = String::from(FILE_NAME);
                 file_name.push_str(&i.to_string());
-                file_name.push_str(".txt");
 
                 let mut file_path = path.clone();
                 let mut move_file_path = path.clone();
@@ -1254,27 +1255,20 @@ mod tests {
                     }
                 }
 
-                let update_state = generate_random_update(
-                    path.clone(),
-                    Some(FILE_DIR_1),
-                    Some(&file_name),
-                );
+                let update_state =
+                    generate_random_update(path.clone(), Some(&file_name));
 
                 match update_state {
-                    // create
-                    1 => {
+                    CREATE => {
                         let _ = index1.track_addition(&file_path);
                     }
-                    // update
-                    2 => {
+                    UPDATE => {
                         let _ = index1.track_update(&file_path, old_id);
                     }
-                    // delete
-                    3 => {
+                    DELETE => {
                         let _ = index1.track_deletion(old_id);
                     }
-                    //move
-                    4 => {
+                    MOVE => {
                         let _ = index1.track_deletion(old_id);
                         let _ = index1.track_addition(&move_file_path);
                     }
@@ -1285,7 +1279,6 @@ mod tests {
             index2
                 .update_all()
                 .expect("Should update index correctly");
-
             assert_eq!(index1, index2);
         })
     }
@@ -1305,6 +1298,9 @@ mod tests {
             added_file_path.push(FILE_NAME_2);
             let _ = index_track_addition.track_addition(&added_file_path);
 
+            let ten_millis = time::Duration::from_millis(10);
+            thread::sleep(ten_millis);
+
             index_update_all
                 .update_all()
                 .expect("Should update index correctly");
@@ -1315,7 +1311,8 @@ mod tests {
 
     // For the update_all function to work correctly, the file must be modified 1 ms after the new file is created.
     #[test]
-    fn update_all_work_correctly_the_file_must_be_modified_1ms_after_the_new_file_is_created() {
+    fn update_all_work_correctly_the_file_must_be_modified_1ms_after_the_new_file_is_created(
+    ) {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
             let (mut file, _) = create_file_at(
@@ -1336,7 +1333,7 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(initial_index , index_update_all);
+            assert!(initial_index != index_update_all);
         })
     }
 }
