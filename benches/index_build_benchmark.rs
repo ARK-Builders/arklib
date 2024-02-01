@@ -16,21 +16,20 @@ fn index_build_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("index_build");
     group.measurement_time(std::time::Duration::from_secs(20)); // Set the measurement time here
 
+    let mut collisions_size = 0;
+
     group.bench_with_input(
         BenchmarkId::new("index_build", path),
         &path,
         |b, path| {
             b.iter(|| {
-                ResourceIndex::build(black_box(path.to_string()));
+                let index = ResourceIndex::build(black_box(path.to_string()));
+                collisions_size = index.collisions.len();
             });
         },
     );
-
     group.finish();
 
-    // Print the number of collisions (i.e. resources with the same hash)
-    let index = ResourceIndex::build(path.to_string());
-    let collisions_size = index.collisions.len();
     println!("Collisions: {}", collisions_size);
 }
 
