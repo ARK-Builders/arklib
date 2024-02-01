@@ -684,6 +684,8 @@ mod tests {
 
     use std::{thread, time};
 
+    use std::convert::TryInto;
+
     const DATA_SIZE_1: u64 = 10;
     const DATA_SIZE_2: u64 = 11;
     const MODIFIED_SIZE: u64 = 12;
@@ -1133,19 +1135,35 @@ mod tests {
         assert!(new2 > new1);
     }
 
-    const CREATE: i32 = 1;
-    const UPDATE: i32 = 2;
-    const DELETE: i32 = 3;
-    const MOVE: i32 = 5;
+    const ACTIONCNT: i32 = 4;
+    enum ActionType {
+        CREATE = 1,
+        UPDATE,
+        DELETE,
+        MOVE,
+    }
+
+    impl From<i32> for ActionType {
+        fn from(value: i32) -> Self {
+            match value {
+                1 => ActionType::CREATE,
+                2 => ActionType::UPDATE,
+                3 => ActionType::DELETE,
+                4 => ActionType::MOVE,
+                _ => unreachable!("Invalid ActionType value"),
+            }
+        }
+    }
 
     const FILE_DIR_1: &str = "folder_1";
     const FILE_DIR_2: &str = "folder_2";
     const FILE_NAME: &str = "test_";
     const FILE_COUNT: i32 = 3;
+    const FILE_RAND_NAME_SIZE: usize = 7;
 
     fn generate_random_update(root_path: PathBuf, name: Option<&str>) -> i32 {
         let mut rng = rand::thread_rng();
-        let rand_num: i32 = rng.gen_range(0..10);
+        let rand_num: i32 = rng.gen_range(0..ACTIONCNT);
 
         let mut folder_1 = root_path.clone();
         let mut folder_2 = root_path.clone();
@@ -1159,15 +1177,14 @@ mod tests {
             cur_file_path.push(file_name);
         }
 
-        match rand_num {
-            CREATE => {
-
+        match rand_num.try_into() {
+            Ok(ActionType::CREATE) => {
                 // create randomize file name
                 let random_file_name_new: String = rng
-                .sample_iter(&Alphanumeric)
-                .take(7)
-                .map(char::from)
-                .collect();
+                    .sample_iter(&Alphanumeric)
+                    .take(FILE_RAND_NAME_SIZE)
+                    .map(char::from)
+                    .collect();
 
                 create_file_at(
                     folder_1.clone(),
@@ -1175,22 +1192,22 @@ mod tests {
                     Some(&random_file_name_new),
                 );
             }
-            UPDATE => {
+            Ok(ActionType::UPDATE) => {
                 let mut file = File::create(cur_file_path.as_path())
                     .expect("Unable to create file");
                 modify_file(&mut file);
             }
-            DELETE => {
+            Ok(ActionType::DELETE) => {
                 std::fs::remove_file(cur_file_path.clone())
                     .expect("Should remove file successfully");
             }
-            MOVE => {
+            Ok(ActionType::MOVE) => {
                 let mut name_to = folder_2.clone();
                 name_to.push(cur_file_name);
                 std::fs::rename(cur_file_path, name_to)
                     .expect("Should rename file successfully");
             }
-            _ => println!("rnd_num error"),
+            Err(_) => println!("rnd_num error"),
         }
 
         return rand_num;
@@ -1258,21 +1275,21 @@ mod tests {
                 let update_state =
                     generate_random_update(path.clone(), Some(&file_name));
 
-                match update_state {
-                    CREATE => {
+                match update_state.try_into() {
+                    Ok(ActionType::CREATE) => {
                         let _ = index1.track_addition(&file_path);
                     }
-                    UPDATE => {
+                    Ok(ActionType::UPDATE) => {
                         let _ = index1.track_update(&file_path, old_id);
                     }
-                    DELETE => {
+                    Ok(ActionType::DELETE) => {
                         let _ = index1.track_deletion(old_id);
                     }
-                    MOVE => {
+                    Ok(ActionType::MOVE) => {
                         let _ = index1.track_deletion(old_id);
                         let _ = index1.track_addition(&move_file_path);
                     }
-                    _ => println!("rnd_num error"),
+                    Err(_) => println!("rnd_num error"),
                 }
             }
 
@@ -1333,7 +1350,10 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert!(initial_index != index_update_all);
+            assert_ne!(
+                initial_index, index_update_all,
+                "we are testing that the values are not equal"
+            );
         })
     }
 }
