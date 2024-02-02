@@ -1199,8 +1199,10 @@ mod tests {
             Ok(FileAction::UPDATE) => {
                 let mut file = File::create(cur_file_path.as_path())
                     .expect("Unable to create file");
+
                 let ten_millis = time::Duration::from_millis(10);
                 thread::sleep(ten_millis);
+
                 modify_file(&mut file);
             }
             Ok(FileAction::DELETE) => {
@@ -1290,9 +1292,6 @@ mod tests {
                     Err(_) => println!("rnd_num error"),
                 }
             }
-
-            let ten_millis = time::Duration::from_millis(10);
-            thread::sleep(ten_millis);
             index2
                 .update_all()
                 .expect("Should update index correctly");
