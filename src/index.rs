@@ -1135,21 +1135,22 @@ mod tests {
         assert!(new2 > new1);
     }
 
-    const ACTIONCNT: i32 = 4;
-    enum ActionType {
-        CREATE = 1,
-        UPDATE,
-        DELETE,
-        MOVE,
+    const ACTIONS_COUNT: i32 = 4;
+
+    enum FileAction {
+        CREATE = 0, // create new file by new path
+        UPDATE,     // new content by existing path
+        DELETE,     // remove the file by existing path
+        MOVE,       // same content, new path
     }
 
-    impl From<i32> for ActionType {
+    impl From<i32> for FileAction {
         fn from(value: i32) -> Self {
             match value {
-                1 => ActionType::CREATE,
-                2 => ActionType::UPDATE,
-                3 => ActionType::DELETE,
-                4 => ActionType::MOVE,
+                0 => FileAction::CREATE,
+                1 => FileAction::UPDATE,
+                2 => FileAction::DELETE,
+                3 => FileAction::MOVE,
                 _ => unreachable!("Invalid ActionType value"),
             }
         }
@@ -1158,12 +1159,12 @@ mod tests {
     const FILE_DIR_1: &str = "folder_1";
     const FILE_DIR_2: &str = "folder_2";
     const FILE_NAME: &str = "test_";
-    const FILE_COUNT: i32 = 3;
+    const FILE_COUNT: i32 = 10;
     const FILE_RAND_NAME_SIZE: usize = 7;
 
     fn generate_random_update(root_path: PathBuf, name: Option<&str>) -> i32 {
         let mut rng = rand::thread_rng();
-        let rand_num: i32 = rng.gen_range(0..ACTIONCNT);
+        let rand_num: i32 = rng.gen_range(0..ACTIONS_COUNT);
 
         let mut folder_1 = root_path.clone();
         let mut folder_2 = root_path.clone();
@@ -1178,7 +1179,7 @@ mod tests {
         }
 
         match rand_num.try_into() {
-            Ok(ActionType::CREATE) => {
+            Ok(FileAction::CREATE) => {
                 // create randomize file name
                 let random_file_name_new: String = rng
                     .sample_iter(&Alphanumeric)
@@ -1192,16 +1193,16 @@ mod tests {
                     Some(&random_file_name_new),
                 );
             }
-            Ok(ActionType::UPDATE) => {
+            Ok(FileAction::UPDATE) => {
                 let mut file = File::create(cur_file_path.as_path())
                     .expect("Unable to create file");
                 modify_file(&mut file);
             }
-            Ok(ActionType::DELETE) => {
+            Ok(FileAction::DELETE) => {
                 std::fs::remove_file(cur_file_path.clone())
                     .expect("Should remove file successfully");
             }
-            Ok(ActionType::MOVE) => {
+            Ok(FileAction::MOVE) => {
                 let mut name_to = folder_2.clone();
                 name_to.push(cur_file_name);
                 std::fs::rename(cur_file_path, name_to)
@@ -1222,7 +1223,7 @@ mod tests {
         std::fs::create_dir(&folder_1).expect("Could not create temp dir");
         std::fs::create_dir(&folder_2).expect("Could not create temp dir");
 
-        for i in 1..FILE_COUNT {
+        for i in 0..FILE_COUNT {
             let data_size: u64 = (i + 10).try_into().unwrap();
             let mut create_file_name = String::from(FILE_NAME);
             create_file_name.push_str(&i.to_string());
@@ -1244,7 +1245,7 @@ mod tests {
             let mut index1 = initial_index.clone();
             let mut index2 = initial_index.clone();
 
-            for i in 1..FILE_COUNT {
+            for i in 0..FILE_COUNT {
                 let mut file_name = String::from(FILE_NAME);
                 file_name.push_str(&i.to_string());
 
@@ -1276,16 +1277,16 @@ mod tests {
                     generate_random_update(path.clone(), Some(&file_name));
 
                 match update_state.try_into() {
-                    Ok(ActionType::CREATE) => {
+                    Ok(FileAction::CREATE) => {
                         let _ = index1.track_addition(&file_path);
                     }
-                    Ok(ActionType::UPDATE) => {
+                    Ok(FileAction::UPDATE) => {
                         let _ = index1.track_update(&file_path, old_id);
                     }
-                    Ok(ActionType::DELETE) => {
+                    Ok(FileAction::DELETE) => {
                         let _ = index1.track_deletion(old_id);
                     }
-                    Ok(ActionType::MOVE) => {
+                    Ok(FileAction::MOVE) => {
                         let _ = index1.track_deletion(old_id);
                         let _ = index1.track_addition(&move_file_path);
                     }
@@ -1328,8 +1329,7 @@ mod tests {
 
     // For the update_all function to work correctly, the file must be modified 1 ms after the new file is created.
     #[test]
-    fn update_all_work_correctly_the_file_must_be_modified_1ms_after_the_new_file_is_created(
-    ) {
+    fn update_all_detects_changes_if_they_are_made_slower_than_1ms() {
         run_test_and_clean_up(|path| {
             create_file_at(path.clone(), Some(DATA_SIZE_1), Some(FILE_NAME_1));
             let (mut file, _) = create_file_at(
@@ -1352,7 +1352,7 @@ mod tests {
 
             assert_ne!(
                 initial_index, index_update_all,
-                "we are testing that the values are not equal"
+                "An updated index cannot be equal to the initial one"
             );
         })
     }
