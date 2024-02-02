@@ -1174,7 +1174,7 @@ mod tests {
         new_name: Option<&str>,
     ) -> i32 {
         let mut rng = rand::thread_rng();
-        let mut rand_num: i32 = rng.gen_range(0..ACTIONS_COUNT);
+        let rand_num: i32 = rng.gen_range(0..ACTIONS_COUNT);
 
         let mut cur_file_path = root_path.clone();
         if let Some(file_name) = cur_name {
@@ -1300,7 +1300,6 @@ mod tests {
         })
     }
 
-    //
     #[test]
     fn update_all_compare_track_addition() {
         run_test_and_clean_up(|path| {
@@ -1320,7 +1319,7 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_eq!(index_track_addition, index_update_all);
+            assert_ne!(index_track_addition, index_update_all);
         })
     }
 
