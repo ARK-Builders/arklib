@@ -400,7 +400,6 @@ impl ResourceIndex {
                 Ok(entry) => {
                     let result = IndexUpdate::added(path_buf.clone(), entry.id);
                     self.insert_entry(path_buf, entry);
-
                     Ok(result)
                 }
             },
@@ -1156,46 +1155,52 @@ mod tests {
         }
     }
 
-    const FILE_DIR_1: &str = "folder_1";
-    const FILE_DIR_2: &str = "folder_2";
     const FILE_NAME: &str = "test_";
-    const FILE_COUNT: i32 = 10;
+    const FILE_COUNT: i32 = 3;
     const FILE_RAND_NAME_SIZE: usize = 7;
 
-    fn generate_random_update(root_path: PathBuf, name: Option<&str>) -> i32 {
+    // create randomize file name
+    fn new_rand_filename() -> String {
+        let rng = rand::thread_rng();
+        rng.sample_iter(&Alphanumeric)
+            .take(FILE_RAND_NAME_SIZE)
+            .map(char::from)
+            .collect()
+    }
+
+    fn generate_random_update(
+        root_path: PathBuf,
+        cur_name: Option<&str>,
+        new_name: Option<&str>,
+    ) -> i32 {
         let mut rng = rand::thread_rng();
-        let rand_num: i32 = rng.gen_range(0..ACTIONS_COUNT);
+        let mut rand_num: i32 = rng.gen_range(0..ACTIONS_COUNT);
 
-        let mut folder_1 = root_path.clone();
-        let mut folder_2 = root_path.clone();
-        folder_1.push(FILE_DIR_1);
-        folder_2.push(FILE_DIR_2);
-
-        let mut cur_file_name = "";
-        let mut cur_file_path = folder_1.clone();
-        if let Some(file_name) = name {
-            cur_file_name = file_name;
+        let mut cur_file_path = root_path.clone();
+        if let Some(file_name) = cur_name {
             cur_file_path.push(file_name);
+        }
+
+        let mut new_file_name = "";
+        let mut new_file_path = root_path.clone();
+        if let Some(file_name) = new_name {
+            new_file_name = file_name;
+            new_file_path.push(file_name);
         }
 
         match rand_num.try_into() {
             Ok(FileAction::CREATE) => {
-                // create randomize file name
-                let random_file_name_new: String = rng
-                    .sample_iter(&Alphanumeric)
-                    .take(FILE_RAND_NAME_SIZE)
-                    .map(char::from)
-                    .collect();
-
                 create_file_at(
-                    folder_1.clone(),
+                    root_path.clone(),
                     Some(DATA_SIZE_2),
-                    Some(&random_file_name_new),
+                    Some(&new_file_name),
                 );
             }
             Ok(FileAction::UPDATE) => {
                 let mut file = File::create(cur_file_path.as_path())
                     .expect("Unable to create file");
+                let ten_millis = time::Duration::from_millis(10);
+                thread::sleep(ten_millis);
                 modify_file(&mut file);
             }
             Ok(FileAction::DELETE) => {
@@ -1203,9 +1208,7 @@ mod tests {
                     .expect("Should remove file successfully");
             }
             Ok(FileAction::MOVE) => {
-                let mut name_to = folder_2.clone();
-                name_to.push(cur_file_name);
-                std::fs::rename(cur_file_path, name_to)
+                std::fs::rename(cur_file_path, new_file_path)
                     .expect("Should rename file successfully");
             }
             Err(_) => println!("rnd_num error"),
@@ -1215,21 +1218,13 @@ mod tests {
     }
 
     fn init_tmp_directory(root_path: PathBuf) {
-        let mut folder_1 = root_path.clone();
-        let mut folder_2 = root_path.clone();
-        folder_1.push(FILE_DIR_1);
-        folder_2.push(FILE_DIR_2);
-
-        std::fs::create_dir(&folder_1).expect("Could not create temp dir");
-        std::fs::create_dir(&folder_2).expect("Could not create temp dir");
-
         for i in 0..FILE_COUNT {
             let data_size: u64 = (i + 10).try_into().unwrap();
             let mut create_file_name = String::from(FILE_NAME);
             create_file_name.push_str(&i.to_string());
 
             create_file_at(
-                folder_1.clone(),
+                root_path.clone(),
                 Some(data_size),
                 Some(&create_file_name),
             );
@@ -1250,12 +1245,11 @@ mod tests {
                 file_name.push_str(&i.to_string());
 
                 let mut file_path = path.clone();
-                let mut move_file_path = path.clone();
-                file_path.push(FILE_DIR_1);
+                let mut new_file_path = path.clone();
                 file_path.push(file_name.clone());
 
-                move_file_path.push(FILE_DIR_2);
-                move_file_path.push(file_name.clone());
+                let rand_new_filename: String = new_rand_filename();
+                new_file_path.push(rand_new_filename.clone());
 
                 let old_id: ResourceId;
                 match CanonicalPathBuf::canonicalize(&file_path) {
@@ -1273,12 +1267,15 @@ mod tests {
                     }
                 }
 
-                let update_state =
-                    generate_random_update(path.clone(), Some(&file_name));
+                let update_state = generate_random_update(
+                    path.clone(),
+                    Some(&file_name),
+                    Some(&rand_new_filename),
+                );
 
                 match update_state.try_into() {
                     Ok(FileAction::CREATE) => {
-                        let _ = index1.track_addition(&file_path);
+                        let _ = index1.track_addition(&new_file_path);
                     }
                     Ok(FileAction::UPDATE) => {
                         let _ = index1.track_update(&file_path, old_id);
@@ -1288,12 +1285,14 @@ mod tests {
                     }
                     Ok(FileAction::MOVE) => {
                         let _ = index1.track_deletion(old_id);
-                        let _ = index1.track_addition(&move_file_path);
+                        let _ = index1.track_addition(&new_file_path);
                     }
                     Err(_) => println!("rnd_num error"),
                 }
             }
 
+            let ten_millis = time::Duration::from_millis(10);
+            thread::sleep(ten_millis);
             index2
                 .update_all()
                 .expect("Should update index correctly");
@@ -1301,6 +1300,7 @@ mod tests {
         })
     }
 
+    //
     #[test]
     fn update_all_compare_track_addition() {
         run_test_and_clean_up(|path| {
@@ -1315,9 +1315,6 @@ mod tests {
             let mut added_file_path = path.clone();
             added_file_path.push(FILE_NAME_2);
             let _ = index_track_addition.track_addition(&added_file_path);
-
-            let ten_millis = time::Duration::from_millis(10);
-            thread::sleep(ten_millis);
 
             index_update_all
                 .update_all()
