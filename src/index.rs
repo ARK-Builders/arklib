@@ -1318,7 +1318,10 @@ mod tests {
                 .update_all()
                 .expect("Should update index correctly");
 
-            assert_ne!(index_track_addition, index_update_all);
+            assert_ne!(
+                index_track_addition, index_update_all,
+                "Files with the same id cannot be added"
+            );
         })
     }
 
