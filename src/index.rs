@@ -449,48 +449,37 @@ impl ResourceIndex {
                     self.path2id[path]
                 );
 
-                let curr_entry = &self.path2id.get(path);
-                if curr_entry.is_none() {
-                    return Err(ArklibError::Path("The path hasn't been indexed before".into()));
-                }
+                let curr_entry = match self.path2id.get(path) {
+                    Some(entry) => entry,
+                    None => {
+                        return Err(ArklibError::Path(
+                            "The path hasn't been indexed before".into(),
+                        ))
+                    }
+                };
 
-                let curr_entry = curr_entry.unwrap();
+                let new_entry = scan_entry(path, metadata)?;
 
-                match scan_entry(path, metadata) {
-                    Err(e) => Err(e),
-                    Ok(new_entry) => Ok({
-                        // valid resource exists by the path
+                if curr_entry.id != new_entry.id {
+                    let mut deleted = HashSet::new();
+                    deleted.insert(old_id);
 
-                        if curr_entry.id != new_entry.id {
-                            // new resource exists by the path
+                    let mut added = HashMap::new();
+                    added.insert(path_buf.clone(), new_entry.id);
 
-                            let mut deleted = HashSet::new();
-                            deleted.insert(old_id);
+                    self.forget_entry(path, old_id);
+                    self.insert_entry(path_buf, new_entry);
 
-                            let mut added = HashMap::new();
-                            added.insert(path_buf.clone(), new_entry.id);
-
-                            self.forget_entry(path, old_id);
-                            self.insert_entry(path_buf, new_entry);
-
-                            IndexUpdate { deleted, added }
-
-                        } else {
-                            // the content wasn't really updated because hash didn't change
-                            // in rare cases we are here due to hash collision
-
-                            if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was not modified", &path);
-                            } else {
-                                log::warn!(
-                                    "path {:?} was modified but not its content",
-                                    &path
-                                );
-                            }
-
-                            IndexUpdate::default()
-                        }
-                    }),
+                    Ok(IndexUpdate { deleted, added })
+                } else if curr_entry.modified == new_entry.modified {
+                    log::warn!("path {:?} was not modified", &path);
+                    Ok(IndexUpdate::default())
+                } else {
+                    log::warn!(
+                        "path {:?} was modified but not its content",
+                        &path
+                    );
+                    Ok(IndexUpdate::default())
                 }
             });
     }
