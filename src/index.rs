@@ -360,11 +360,11 @@ impl ResourceIndex {
         Ok(IndexUpdate { deleted, added })
     }
 
-    // The caller must ensure that:
-    // * the index is up-to-date except this single path
-    // * the path hasn't been indexed before
-    //
-    // Should only be used if reactive updates are not possible.
+    /// The caller must ensure that:
+    /// * the index is up-to-date except this single path
+    /// * the path hasn't been indexed before
+    ///
+    /// Should only be used if reactive updates are not possible.
     pub fn track_addition(
         &mut self,
         path: &dyn AsRef<Path>,
@@ -393,12 +393,12 @@ impl ResourceIndex {
         Ok(result)
     }
 
-    // The caller must ensure that:
-    // * the index is up-to-date except this single id
-    // * the resource with this id has been indexed before
-    // * the resource with this id doesn't exist anymore
-    //
-    // Should only be used if reactive updates are not possible.
+    /// The caller must ensure that:
+    /// * the index is up-to-date except this single id
+    /// * the resource with this id has been indexed before
+    /// * the resource with this id doesn't exist anymore
+    ///
+    /// Should only be used if reactive updates are not possible.
     pub fn track_deletion(&mut self, id: ResourceId) -> Result<IndexUpdate> {
         log::debug!("Tracking a single deletion in the index");
 
@@ -415,13 +415,13 @@ impl ResourceIndex {
         Ok(IndexUpdate::default().deleted(id))
     }
 
-    // The caller must ensure that:
-    // * the index is up-to-date except this single path
-    // * the path has been indexed before
-    // * the path has been mapped into `old_id`
-    //
-    // Should only be used if reactive updates are not possible.
-    // Returns an empty update if the resource hasn't been really updated.
+    /// The caller must ensure that:
+    /// * the index is up-to-date except this single path
+    /// * the path has been indexed before
+    /// * the path has been mapped into `old_id`
+    ///
+    /// Should only be used if reactive updates are not possible.
+    /// Returns an empty update if the resource hasn't been really updated.
     pub fn track_update(
         &mut self,
         path: &dyn AsRef<Path>,
