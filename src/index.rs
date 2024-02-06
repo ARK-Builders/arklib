@@ -501,24 +501,28 @@ impl ResourceIndex {
         self.path2id.insert(path, entry);
     }
 
-    fn forget_entry(&mut self, path: &CanonicalPath, id: ResourceId) {
+    fn forget_entry(
+        &mut self,
+        path: &CanonicalPath,
+        id: ResourceId,
+    ) -> Result<()> {
         let removed = self.path2id.remove(path);
-        debug_assert!(removed.is_some(), "The path is not indexed");
-        let removed = removed.unwrap();
-
+        let removed = match removed {
+            Some(entry) => entry,
+            None => {
+                return Err(ArklibError::Path("The path is not indexed".into()))
+            }
+        };
         debug_assert_eq!(removed.id, id, "The path is mapped to another id");
-
         if let Some(collisions) = self.collisions.get_mut(&id) {
             debug_assert!(
                 *collisions > 1,
                 "Any collision must involve at least 2 resources"
             );
             *collisions -= 1;
-
             if *collisions == 1 {
                 self.collisions.remove(&id);
             }
-
             // minor performance issue:
             // we must find path of one of the collided
             // resources and use it as new value
@@ -530,13 +534,14 @@ impl ResourceIndex {
                         None
                     }
                 });
-
-            debug_assert!(
-                collided_path.is_some(),
-                "Illegal state of collision tracker"
-            );
-            let collided_path = collided_path.unwrap();
-
+            let collided_path = match collided_path {
+                Some(path) => path.clone(),
+                None => {
+                    return Err(ArklibError::Other(anyhow!(
+                        "Illegal state of collision tracker"
+                    )))
+                }
+            };
             let old_path = self.id2path.insert(id, collided_path.clone());
             debug_assert_eq!(
                 old_path.unwrap().as_canonical_path(),
@@ -546,6 +551,7 @@ impl ResourceIndex {
         } else {
             self.id2path.remove(&id);
         }
+        Ok(())
     }
 }
 
