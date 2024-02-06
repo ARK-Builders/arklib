@@ -29,19 +29,10 @@ pub struct ResourceIndex {
     root: PathBuf,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 pub struct IndexUpdate {
     pub deleted: HashSet<ResourceId>,
     pub added: HashMap<CanonicalPathBuf, ResourceId>,
-}
-
-impl Default for IndexUpdate {
-    fn default() -> Self {
-        IndexUpdate {
-            deleted: HashSet::new(),
-            added: HashMap::new(),
-        }
-    }
 }
 
 impl IndexUpdate {
@@ -410,7 +401,7 @@ impl ResourceIndex {
         }
 
         let indexed_path = indexed_path.unwrap().clone();
-        self.forget_entry(indexed_path.as_canonical_path(), id);
+        self.forget_entry(indexed_path.as_canonical_path(), id)?;
 
         Ok(IndexUpdate::default().deleted(id))
     }
@@ -467,7 +458,7 @@ impl ResourceIndex {
                     let mut added = HashMap::new();
                     added.insert(path_buf.clone(), new_entry.id);
 
-                    self.forget_entry(path, old_id);
+                    self.forget_entry(path, old_id)?;
                     self.insert_entry(path_buf, new_entry);
 
                     Ok(IndexUpdate { deleted, added })
