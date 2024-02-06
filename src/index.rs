@@ -35,32 +35,23 @@ pub struct IndexUpdate {
     pub added: HashMap<CanonicalPathBuf, ResourceId>,
 }
 
+impl Default for IndexUpdate {
+    fn default() -> Self {
+        IndexUpdate {
+            deleted: HashSet::new(),
+            added: HashMap::new(),
+        }
+    }
+}
+
 impl IndexUpdate {
-    pub fn empty() -> Self {
-        IndexUpdate {
-            deleted: HashSet::new(),
-            added: HashMap::new(),
-        }
+    pub fn added(mut self, path: CanonicalPathBuf, id: ResourceId) -> Self {
+        self.added.insert(path, id);
+        self
     }
-
-    pub fn added(path: CanonicalPathBuf, id: ResourceId) -> Self {
-        let mut added = HashMap::new();
-        added.insert(path, id);
-
-        IndexUpdate {
-            deleted: HashSet::new(),
-            added,
-        }
-    }
-
-    pub fn deleted(id: ResourceId) -> Self {
-        let mut deleted = HashSet::new();
-        deleted.insert(id);
-
-        IndexUpdate {
-            deleted,
-            added: HashMap::new(),
-        }
+    pub fn deleted(mut self, id: ResourceId) -> Self {
+        self.deleted.insert(id);
+        self
     }
 }
 
@@ -389,21 +380,17 @@ impl ResourceIndex {
         let path_buf = CanonicalPathBuf::canonicalize(path)?;
         let path = path_buf.as_canonical_path();
 
-        match fs::metadata(path) {
-            Err(_) => Err(ArklibError::Path(
-                "Couldn't to retrieve file metadata".into(),
-            )),
-            Ok(metadata) => match scan_entry(path, metadata) {
-                Err(_) => Err(ArklibError::Path(
-                    "The path points to a directory or empty file".into(),
-                )),
-                Ok(entry) => {
-                    let result = IndexUpdate::added(path_buf.clone(), entry.id);
-                    self.insert_entry(path_buf, entry);
-                    Ok(result)
-                }
-            },
-        }
+        let metadata = fs::metadata(path).map_err(|_| {
+            ArklibError::Path("Couldn't retrieve file metadata".into())
+        })?;
+        let entry = scan_entry(path, metadata).map_err(|_| {
+            ArklibError::Path(
+                "The path points to a directory or empty file".into(),
+            )
+        })?;
+        let result = IndexUpdate::default().added(path_buf.clone(), entry.id);
+        self.insert_entry(path_buf, entry);
+        Ok(result)
     }
 
     // The caller must ensure that:
@@ -425,7 +412,7 @@ impl ResourceIndex {
         let indexed_path = indexed_path.unwrap().clone();
         self.forget_entry(indexed_path.as_canonical_path(), id);
 
-        Ok(IndexUpdate::deleted(id))
+        Ok(IndexUpdate::default().deleted(id))
     }
 
     // The caller must ensure that:
@@ -501,7 +488,7 @@ impl ResourceIndex {
                                 );
                             }
 
-                            IndexUpdate::empty()
+                            IndexUpdate::default()
                         }
                     }),
                 }
@@ -1325,7 +1312,8 @@ mod tests {
         })
     }
 
-    // For the update_all function to work correctly, the file must be modified 1 ms after the new file is created.
+    // For the update_all function to work correctly, the file must be modified
+    // 1 ms after the new file is created.
     #[test]
     fn update_all_detects_changes_if_they_are_made_slower_than_1ms() {
         run_test_and_clean_up(|path| {
