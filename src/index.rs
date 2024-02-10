@@ -685,8 +685,8 @@ mod tests {
     const FILE_NAME_2: &str = "test2.txt";
     const FILE_NAME_3: &str = "test3.txt";
 
-    const HASH_1: u32 = 3817498742;
-    const HASH_2: u32 = 1804055020;
+    const HASH_1: u64 = 15491601967525102045;
+    const HASH_2: u64 = 17585972472110436184;
 
     fn get_temp_dir() -> PathBuf {
         create_dir_at(std::env::temp_dir())
