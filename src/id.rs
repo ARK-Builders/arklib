@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use crc32fast::Hasher;
+use highway::{HighwayHash, HighwayHasher as Hasher};
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -25,7 +25,7 @@ use crate::{ArklibError, Result};
 )]
 pub struct ResourceId {
     pub data_size: u64,
-    pub hash: u32,
+    pub hash: u64,
 }
 
 impl Display for ResourceId {
@@ -40,7 +40,7 @@ impl FromStr for ResourceId {
     fn from_str(s: &str) -> Result<Self> {
         let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let hash: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
+        let hash: u64 = r.parse().map_err(|_| ArklibError::Parse)?;
 
         Ok(ResourceId { data_size, hash })
     }
@@ -84,14 +84,14 @@ impl ResourceId {
             data_size / MEGABYTE
         );
 
-        let mut hasher = Hasher::new();
+        let mut hasher = Hasher::default();
         let mut bytes_read: u32 = 0;
         loop {
             let bytes_read_iteration: usize = reader.fill_buf()?.len();
             if bytes_read_iteration == 0 {
                 break;
             }
-            hasher.update(reader.buffer());
+            hasher.append(reader.buffer());
             reader.consume(bytes_read_iteration);
             bytes_read +=
                 u32::try_from(bytes_read_iteration).map_err(|_| {
@@ -99,7 +99,7 @@ impl ResourceId {
                 })?;
         }
 
-        let hash: u32 = hasher.finalize();
+        let hash: u64 = hasher.finalize64();
         log::trace!("[compute] {} bytes has been read", bytes_read);
         log::trace!("[compute] checksum: {:#02x}", hash);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
@@ -133,12 +133,12 @@ mod tests {
             .len();
 
         let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.hash, 0x342a3d4a);
+        assert_eq!(id1.hash, 3309468183667921738);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.hash, 0x342a3d4a);
+        assert_eq!(id2.hash, 3309468183667921738);
         assert_eq!(id2.data_size, 128760);
     }
 
