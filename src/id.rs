@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use crc32fast::Hasher;
 use log;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -8,6 +7,7 @@ use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
+use xxhash_rust::xxh32::Xxh32 as Hasher;
 
 use crate::{ArklibError, Result};
 
@@ -84,7 +84,7 @@ impl ResourceId {
             data_size / MEGABYTE
         );
 
-        let mut hasher = Hasher::new();
+        let mut hasher = Hasher::new(0);
         let mut bytes_read: u32 = 0;
         loop {
             let bytes_read_iteration: usize = reader.fill_buf()?.len();
@@ -99,7 +99,7 @@ impl ResourceId {
                 })?;
         }
 
-        let hash: u32 = hasher.finalize();
+        let hash: u32 = hasher.digest();
         log::trace!("[compute] {} bytes has been read", bytes_read);
         log::trace!("[compute] checksum: {:#02x}", hash);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
@@ -133,12 +133,12 @@ mod tests {
             .len();
 
         let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.hash, 0x342a3d4a);
+        assert_eq!(id1.hash, 2998840226);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.hash, 0x342a3d4a);
+        assert_eq!(id2.hash, 2998840226);
         assert_eq!(id2.data_size, 128760);
     }
 
