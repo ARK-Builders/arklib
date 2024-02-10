@@ -25,12 +25,12 @@ use crate::{ArklibError, Result};
 )]
 pub struct ResourceId {
     pub data_size: u64,
-    pub crc32: u32,
+    pub hash: u32,
 }
 
 impl Display for ResourceId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.data_size, self.crc32)
+        write!(f, "{}-{}", self.data_size, self.hash)
     }
 }
 
@@ -40,9 +40,9 @@ impl FromStr for ResourceId {
     fn from_str(s: &str) -> Result<Self> {
         let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
+        let hash: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId { data_size, hash })
     }
 }
 
@@ -99,12 +99,12 @@ impl ResourceId {
                 })?;
         }
 
-        let crc32: u32 = hasher.finalize();
+        let hash: u32 = hasher.finalize();
         log::trace!("[compute] {} bytes has been read", bytes_read);
-        log::trace!("[compute] checksum: {:#02x}", crc32);
+        log::trace!("[compute] checksum: {:#02x}", hash);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceId { data_size, hash })
     }
 }
 
@@ -133,12 +133,12 @@ mod tests {
             .len();
 
         let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.crc32, 0x342a3d4a);
+        assert_eq!(id1.hash, 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.crc32, 0x342a3d4a);
+        assert_eq!(id2.hash, 0x342a3d4a);
         assert_eq!(id2.data_size, 128760);
     }
 
@@ -146,11 +146,11 @@ mod tests {
     fn resource_id_order() {
         let id1 = ResourceId {
             data_size: 1,
-            crc32: 2,
+            hash: 2,
         };
         let id2 = ResourceId {
             data_size: 2,
-            crc32: 1,
+            hash: 1,
         };
 
         assert!(id1 < id2);
