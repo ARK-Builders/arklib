@@ -38,6 +38,7 @@ pub fn store_metadata<
 }
 
 /// The file must exist if this method is called
+#[allow(dead_code)]
 pub fn load_raw_metadata<P: AsRef<Path>>(
     root: P,
     id: ResourceId,
