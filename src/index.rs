@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use canonical_path::{CanonicalPath, CanonicalPathBuf};
 use itertools::Itertools;
+use log;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
 use std::io::{BufRead, BufReader, Write};
@@ -10,39 +11,54 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use walkdir::{DirEntry, WalkDir};
 
-use log;
+use crate::{id::ResourceId, ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
-use crate::id::ResourceId;
-use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
+pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
+pub type Paths = HashSet<CanonicalPathBuf>;
 
+/// IndexEntry represents a [`ResourceId`] and the time it was last modified
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
 pub struct IndexEntry {
+    /// The time the resource was last modified
     pub modified: SystemTime,
+    /// The resource's ID
     pub id: ResourceId,
 }
 
+/// Represents an index of resources in the system
+///
+/// This struct maintains mappings between resource IDs and their corresponding
+/// file paths, as well as mappings between file paths and index entries
+/// Additionally, it keeps track of collisions that occur during indexing
 #[derive(PartialEq, Clone, Debug)]
 pub struct ResourceIndex {
+    /// A mapping of resource IDs to their corresponding file paths
     pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
+    /// A mapping of file paths to their corresponding index entries
     pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
-
+    /// A mapping of resource IDs to the number of collisions they have
     pub collisions: HashMap<ResourceId, usize>,
+    /// The root path of the index
     root: PathBuf,
 }
 
+/// Represents an update to the resource index
+///
+/// This struct holds information about resources that have been deleted
+/// or added during an update operation on the resource index
 #[derive(PartialEq, Debug)]
 pub struct IndexUpdate {
+    /// Set of resource IDs that have been deleted
     pub deleted: HashSet<ResourceId>,
+    /// Map of file paths to resource IDs that have been added
     pub added: HashMap<CanonicalPathBuf, ResourceId>,
 }
 
-pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
-
-pub type Paths = HashSet<CanonicalPathBuf>;
-
 impl ResourceIndex {
+    /// Returns the number of entries in the index
+    ///
+    /// Note that the actual size is lower in presence of collisions
     pub fn size(&self) -> usize {
-        //the actual size is lower in presence of collisions
         self.path2id.len()
     }
 
