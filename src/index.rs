@@ -62,20 +62,26 @@ impl ResourceIndex {
         self.path2id.len()
     }
 
+    /// Builds a new resource index from scratch using the root path
+    ///
+    /// This function recursively scans the directory structure starting from
+    /// the root path, constructs index entries for each resource found, and
+    /// populates the resource index
     pub fn build<P: AsRef<Path>>(root_path: P) -> Self {
-        log::info!("Building the index from scratch");
-        let root_path: PathBuf = root_path.as_ref().to_owned();
+        let root_path = root_path.as_ref().to_owned();
+        log::info!(
+            "Building the index from scratch for directory: {}",
+            &root_path.display()
+        );
 
         let entries = discover_paths(&root_path);
         let entries = scan_entries(entries);
-
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
             path2id: HashMap::new(),
             collisions: HashMap::new(),
             root: root_path,
         };
-
         for (path, entry) in entries {
             index.insert_entry(path, entry);
         }
