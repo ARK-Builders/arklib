@@ -25,6 +25,7 @@ pdfium-render = { git = "https://github.com/ajrcarey/pdfium-render", rev = "d255
 libloading = "0.7.3"
 serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }
+serde_with = "3.6.1"
 url = { version = "2.2.2", features = ["serde"] }
 reqwest = "0.11.11"
 scraper = "0.13.0"

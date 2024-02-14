@@ -1,23 +1,25 @@
 use anyhow::anyhow;
-use canonical_path::{CanonicalPath, CanonicalPathBuf};
 use itertools::Itertools;
 use log;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
-use std::io::{BufRead, BufReader, Write};
-use std::ops::Add;
+use std::io::BufReader;
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{id::ResourceId, ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
-pub type Paths = HashSet<CanonicalPathBuf>;
+pub type Paths = HashSet<PathBuf>;
 
 /// IndexEntry represents a [`ResourceId`] and the time it was last modified
-#[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
+#[derive(
+    Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug, Serialize, Deserialize,
+)]
 pub struct IndexEntry {
     /// The time the resource was last modified
     pub modified: SystemTime,
@@ -30,12 +32,14 @@ pub struct IndexEntry {
 /// This struct maintains mappings between resource IDs and their corresponding
 /// file paths, as well as mappings between file paths and index entries
 /// Additionally, it keeps track of collisions that occur during indexing
-#[derive(PartialEq, Clone, Debug)]
+#[serde_as]
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct ResourceIndex {
     /// A mapping of resource IDs to their corresponding file paths
-    pub id2path: HashMap<ResourceId, CanonicalPathBuf>,
+    #[serde_as(as = "Vec<(_, _)>")]
+    pub id2path: HashMap<ResourceId, PathBuf>,
     /// A mapping of file paths to their corresponding index entries
-    pub path2id: HashMap<CanonicalPathBuf, IndexEntry>,
+    pub path2id: HashMap<PathBuf, IndexEntry>,
     /// A mapping of resource IDs to the number of collisions they have
     pub collisions: HashMap<ResourceId, usize>,
     /// The root path of the index
@@ -51,7 +55,7 @@ pub struct IndexUpdate {
     /// Set of resource IDs that have been deleted
     pub deleted: HashSet<ResourceId>,
     /// Map of file paths to resource IDs that have been added
-    pub added: HashMap<CanonicalPathBuf, ResourceId>,
+    pub added: HashMap<PathBuf, ResourceId>,
 }
 
 impl ResourceIndex {
@@ -90,95 +94,42 @@ impl ResourceIndex {
         index
     }
 
+    /// Loads a previously stored resource index from the root path
+    ///
+    /// This function reads the index from the file system and returns a new
+    /// [`ResourceIndex`] instance. It looks for the index fie in
+    /// `root_path/.ark/index`
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
-        let root_path: PathBuf = root_path.as_ref().to_owned();
+        let index_path = root_path
+            .as_ref()
+            .join(ARK_FOLDER)
+            .join(INDEX_PATH);
+        log::info!("Loading the index from file: {}", index_path.display());
 
-        let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
-        log::info!("Loading the index from file {}", index_path.display());
-        let file = File::open(&index_path)?;
-        let mut index = ResourceIndex {
-            id2path: HashMap::new(),
-            path2id: HashMap::new(),
-            collisions: HashMap::new(),
-            root: root_path.clone(),
-        };
-
-        // We should not return early in case of missing files
-        let lines = BufReader::new(file).lines();
-        for line in lines {
-            let line = line?;
-
-            let mut parts = line.split(' ');
-
-            let modified = {
-                let str = parts.next().ok_or(ArklibError::Parse)?;
-                UNIX_EPOCH.add(Duration::from_millis(
-                    str.parse().map_err(|_| ArklibError::Parse)?,
-                ))
-            };
-
-            let id = {
-                let str = parts.next().ok_or(ArklibError::Parse)?;
-                ResourceId::from_str(str)?
-            };
-
-            let path: String =
-                itertools::Itertools::intersperse(parts, " ").collect();
-            let path: PathBuf = root_path.join(Path::new(&path));
-            match CanonicalPathBuf::canonicalize(&path) {
-                Ok(path) => {
-                    log::trace!("[load] {} -> {}", id, path.display());
-                    index.insert_entry(path, IndexEntry { id, modified });
-                }
-                Err(_) => {
-                    log::warn!("File {} not found", path.display());
-                    continue;
-                }
-            }
-        }
+        let file = File::open(index_path)?;
+        let reader = BufReader::new(file);
+        let index: ResourceIndex = serde_json::from_reader(reader)?;
 
         Ok(index)
     }
 
+    /// Stores the resource index to the file system
+    ///
+    /// This function writes the index to the file system. It writes the index
+    /// to `root_path/.ark/index` and creates the directory if it does not exist
     pub fn store(&self) -> Result<()> {
         log::info!("Storing the index to file");
-
         let start = SystemTime::now();
 
-        let index_path = self
-            .root
-            .to_owned()
-            .join(ARK_FOLDER)
-            .join(INDEX_PATH);
-
-        let ark_dir = index_path.parent().unwrap();
-        fs::create_dir_all(ark_dir)?;
-
-        let mut file = File::create(index_path)?;
-
-        let mut path2id: Vec<(&CanonicalPathBuf, &IndexEntry)> =
-            self.path2id.iter().collect();
-        path2id.sort_by_key(|(_, entry)| *entry);
-
-        for (path, entry) in path2id.iter() {
-            log::trace!("[store] {} by path {}", entry.id, path.display());
-
-            let timestamp = entry
-                .modified
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| {
-                    ArklibError::Other(anyhow!("Error using duration since"))
-                })?
-                .as_millis();
-
-            let path =
-                pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
-                    .ok_or(ArklibError::Path(
-                        "Couldn't calculate path diff".into(),
-                    ))?;
-
-            writeln!(file, "{} {} {}", timestamp, entry.id, path.display())?;
+        let ark_folder = self.root.join(ARK_FOLDER);
+        if !ark_folder.exists() {
+            fs::create_dir(ark_folder.clone())?;
         }
+        let index_path = ark_folder.join(INDEX_PATH);
+        let file = File::create(index_path)?;
+
+        let writer = BufWriter::new(file);
+        serde_json::to_writer(writer, self)?;
 
         log::trace!(
             "Storing the index took {:?}",
@@ -237,10 +188,10 @@ impl ResourceIndex {
             .cloned()
             .collect();
 
-        let created_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
+        let created_paths: HashMap<PathBuf, DirEntry> = curr_entries
             .iter()
             .filter_map(|(path, entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
+                if !preserved_paths.contains(path) {
                     Some((path.clone(), entry.clone()))
                 } else {
                     None
@@ -249,10 +200,10 @@ impl ResourceIndex {
             .collect();
 
         log::debug!("Checking updated paths");
-        let updated_paths: HashMap<CanonicalPathBuf, DirEntry> = curr_entries
+        let updated_paths: HashMap<PathBuf, DirEntry> = curr_entries
             .into_iter()
             .filter(|(path, dir_entry)| {
-                if !preserved_paths.contains(path.as_canonical_path()) {
+                if !preserved_paths.contains(path) {
                     false
                 } else {
                     let our_entry = &self.path2id[path];
@@ -314,9 +265,7 @@ impl ResourceIndex {
             .cloned()
             .chain(updated_paths.keys().cloned())
             .for_each(|path| {
-                if let Some(entry) =
-                    self.path2id.remove(path.as_canonical_path())
-                {
+                if let Some(entry) = self.path2id.remove(&path) {
                     let k = self.collisions.remove(&entry.id).unwrap_or(1);
                     if k > 1 {
                         self.collisions.insert(entry.id, k - 1);
@@ -334,15 +283,14 @@ impl ResourceIndex {
                 }
             });
 
-        let added: HashMap<CanonicalPathBuf, IndexEntry> =
-            scan_entries(updated_paths)
-                .into_iter()
-                .chain({
-                    log::debug!("Checking added paths");
-                    scan_entries(created_paths).into_iter()
-                })
-                .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
-                .collect();
+        let added: HashMap<PathBuf, IndexEntry> = scan_entries(updated_paths)
+            .into_iter()
+            .chain({
+                log::debug!("Checking added paths");
+                scan_entries(created_paths).into_iter()
+            })
+            .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
+            .collect();
 
         for (path, entry) in added.iter() {
             if deleted.contains(&entry.id) {
@@ -358,7 +306,7 @@ impl ResourceIndex {
             self.insert_entry(path.clone(), entry.clone());
         }
 
-        let added: HashMap<CanonicalPathBuf, ResourceId> = added
+        let added: HashMap<PathBuf, ResourceId> = added
             .into_iter()
             .map(|(path, entry)| (path, entry.id))
             .collect();
@@ -378,8 +326,8 @@ impl ResourceIndex {
             ));
         }
 
-        let path_buf = CanonicalPathBuf::canonicalize(path)?;
-        let path = path_buf.as_canonical_path();
+        let path_buf = fs::canonicalize(path)?;
+        let path = path_buf.as_path();
 
         return match fs::metadata(path) {
             Err(_) => {
@@ -431,8 +379,8 @@ impl ResourceIndex {
             return self.forget_id(old_id);
         }
 
-        let path_buf = CanonicalPathBuf::canonicalize(path)?;
-        let path = path_buf.as_canonical_path();
+        let path_buf = fs::canonicalize(path)?;
+        let path = path_buf.as_path();
 
         log::trace!(
             "[update] paths {:?} has id {:?}",
@@ -521,7 +469,7 @@ impl ResourceIndex {
         })
     }
 
-    fn insert_entry(&mut self, path: CanonicalPathBuf, entry: IndexEntry) {
+    fn insert_entry(&mut self, path: PathBuf, entry: IndexEntry) {
         log::trace!("[add] {} by path {}", entry.id, path.display());
         let id = entry.id;
 
@@ -540,7 +488,7 @@ impl ResourceIndex {
 
     fn forget_path(
         &mut self,
-        path: &CanonicalPath,
+        path: &Path,
         old_id: ResourceId,
     ) -> Result<IndexUpdate> {
         self.path2id.remove(path);
@@ -573,7 +521,7 @@ impl ResourceIndex {
                     self.id2path.insert(old_id, collided_path.clone());
 
                 debug_assert_eq!(
-                    old_path.unwrap().as_canonical_path(),
+                    old_path.unwrap().as_path(),
                     path,
                     "Must forget the requested path"
                 );
@@ -596,9 +544,7 @@ impl ResourceIndex {
     }
 }
 
-fn discover_paths<P: AsRef<Path>>(
-    root_path: P,
-) -> HashMap<CanonicalPathBuf, DirEntry> {
+fn discover_paths<P: AsRef<Path>>(root_path: P) -> HashMap<PathBuf, DirEntry> {
     log::debug!(
         "Discovering all files under path {}",
         root_path.as_ref().display()
@@ -611,7 +557,7 @@ fn discover_paths<P: AsRef<Path>>(
             Ok(entry) => {
                 let path = entry.path();
                 if !entry.file_type().is_dir() {
-                    match CanonicalPathBuf::canonicalize(path) {
+                    match fs::canonicalize(path) {
                         Ok(canonical_path) => Some((canonical_path, entry)),
                         Err(msg) => {
                             log::warn!(
@@ -634,7 +580,7 @@ fn discover_paths<P: AsRef<Path>>(
         .collect()
 }
 
-fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
+fn scan_entry(path: &Path, metadata: Metadata) -> Result<IndexEntry> {
     if metadata.is_dir() {
         return Err(ArklibError::Path("Path is expected to be a file".into()));
     }
@@ -654,14 +600,14 @@ fn scan_entry(path: &CanonicalPath, metadata: Metadata) -> Result<IndexEntry> {
 }
 
 fn scan_entries(
-    entries: HashMap<CanonicalPathBuf, DirEntry>,
-) -> HashMap<CanonicalPathBuf, IndexEntry> {
+    entries: HashMap<PathBuf, DirEntry>,
+) -> HashMap<PathBuf, IndexEntry> {
     entries
         .into_iter()
         .filter_map(|(path_buf, entry)| {
             let metadata = entry.metadata().ok()?;
 
-            let path = path_buf.as_canonical_path();
+            let path = path_buf.as_path();
             let result = scan_entry(path, metadata);
             match result {
                 Err(msg) => {
@@ -688,11 +634,11 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::fs;
     use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
     use crate::initialize;
     use crate::ResourceIndex;
-    use canonical_path::CanonicalPathBuf;
     use std::fs::File;
     #[cfg(target_os = "linux")]
     use std::fs::Permissions;
@@ -758,6 +704,24 @@ mod tests {
     }
 
     // resource index build
+
+    #[test]
+    fn resource_index_load_store() {
+        run_test_and_clean_up(|path| {
+            create_file_at(path.clone(), Some(3), Some(FILE_NAME_1));
+            create_file_at(path.clone(), Some(10), Some(FILE_NAME_2));
+            let index = ResourceIndex::build(path.clone());
+
+            index
+                .store()
+                .expect("Should store index successfully");
+
+            let loaded_index = ResourceIndex::load(path.clone())
+                .expect("Should load index successfully");
+
+            assert_eq!(index, loaded_index);
+        })
+    }
 
     #[test]
     fn index_build_should_process_1_file_successfully() {
@@ -860,9 +824,8 @@ mod tests {
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
 
-            let added_key =
-                CanonicalPathBuf::canonicalize(expected_path.clone())
-                    .expect("CanonicalPathBuf should be fine");
+            let added_key = fs::canonicalize(expected_path.clone())
+                .expect("CanonicalPathBuf should be fine");
             assert_eq!(
                 update
                     .added
@@ -906,7 +869,7 @@ mod tests {
             assert_eq!(update.deleted.len(), 0);
             assert_eq!(update.added.len(), 1);
 
-            let added_key = CanonicalPathBuf::canonicalize(new_path.clone())
+            let added_key = fs::canonicalize(new_path.clone())
                 .expect("CanonicalPathBuf should be fine");
             assert_eq!(
                 update
