@@ -670,10 +670,6 @@ mod tests {
     const CRC32_1: u32 = 3817498742;
     const CRC32_2: u32 = 1804055020;
 
-    fn get_temp_dir() -> PathBuf {
-        create_dir_at(std::env::temp_dir())
-    }
-
     fn create_dir_at(path: PathBuf) -> PathBuf {
         let mut dir_path = path.clone();
         dir_path.push(Uuid::new_v4().to_string());
@@ -697,21 +693,6 @@ mod tests {
         file.set_len(size.unwrap_or(0))
             .expect("Could not set file size");
         (file, file_path)
-    }
-
-    fn run_test_and_clean_up(
-        test: impl FnOnce(PathBuf) + std::panic::UnwindSafe,
-    ) {
-        initialize();
-
-        let path = get_temp_dir();
-        let result = std::panic::catch_unwind(|| test(path.clone()));
-        std::fs::remove_dir_all(path.clone())
-            .expect("Could not clean up after test");
-        if result.is_err() {
-            panic!("{}", result.err().map(|_| "Test panicked").unwrap())
-        }
-        assert!(result.is_ok());
     }
 
     /// A test to ensure that loading and storing an index works correctly
@@ -753,355 +734,367 @@ mod tests {
 
     #[test]
     fn index_build_should_process_1_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let temp_dir = temp_dir.into_path();
 
-            let actual = ResourceIndex::build(path.clone());
+        create_file_at(temp_dir.to_owned(), Some(FILE_SIZE_1), None);
+        let actual = ResourceIndex::build(temp_dir.to_owned());
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 1);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 1);
-        })
+        assert_eq!(actual.root, temp_dir.to_owned());
+        assert_eq!(actual.path2id.len(), 1);
+        assert_eq!(actual.id2path.len(), 1);
+        assert!(actual.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_1,
+            crc32: CRC32_1,
+        }));
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 1);
     }
 
     #[test]
     fn index_build_should_process_colliding_files_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let actual = ResourceIndex::build(path.clone());
+        create_file_at(path.to_owned(), Some(FILE_SIZE_1), None);
+        create_file_at(path.to_owned(), Some(FILE_SIZE_1), None);
+        let actual = ResourceIndex::build(path.to_owned());
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 1);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert_eq!(actual.collisions.len(), 1);
-            assert_eq!(actual.size(), 2);
-        })
+        assert_eq!(actual.root, path.to_owned());
+        assert_eq!(actual.path2id.len(), 2);
+        assert_eq!(actual.id2path.len(), 1);
+        assert!(actual.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_1,
+            crc32: CRC32_1,
+        }));
+        assert_eq!(actual.collisions.len(), 1);
+        assert_eq!(actual.size(), 2);
     }
-
-    // resource index update
 
     #[test]
     fn update_all_should_handle_renamed_file_correctly() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let mut actual = ResourceIndex::build(path.clone());
+        create_file_at(path.to_owned(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+        create_file_at(path.to_owned(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+        let mut actual = ResourceIndex::build(path.to_owned());
 
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 2);
 
-            // rename test2.txt to test3.txt
-            let mut name_from = path.clone();
-            name_from.push(FILE_NAME_2);
-            let mut name_to = path.clone();
-            name_to.push(FILE_NAME_3);
-            std::fs::rename(name_from, name_to)
-                .expect("Should rename file successfully");
+        // rename test2.txt to test3.txt
+        let mut name_from = path.to_owned();
+        name_from.push(FILE_NAME_2);
+        let mut name_to = path.to_owned();
+        name_to.push(FILE_NAME_3);
+        std::fs::rename(name_from, name_to)
+            .expect("Should rename file successfully");
 
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
+        let update = actual
+            .update_all()
+            .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 1);
-            assert_eq!(update.added.len(), 1);
-        })
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 2);
+        assert_eq!(update.deleted.len(), 1);
+        assert_eq!(update.added.len(), 1);
     }
 
     #[test]
     fn update_all_should_index_new_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let mut actual = ResourceIndex::build(path.clone());
+        create_file_at(path.to_owned(), Some(FILE_SIZE_1), None);
+        let mut actual = ResourceIndex::build(path.to_owned());
+        let (_, expected_path) =
+            create_file_at(path.to_owned(), Some(FILE_SIZE_2), None);
+        let update = actual
+            .update_all()
+            .expect("Should update index correctly");
 
-            let (_, expected_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+        assert_eq!(actual.root, path.to_owned());
+        assert_eq!(actual.path2id.len(), 2);
+        assert_eq!(actual.id2path.len(), 2);
+        assert!(actual.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_1,
+            crc32: CRC32_1,
+        }));
+        assert!(actual.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_2,
+            crc32: CRC32_2,
+        }));
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 2);
+        assert_eq!(update.deleted.len(), 0);
+        assert_eq!(update.added.len(), 1);
 
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
+        let added_key = fs::canonicalize(expected_path.clone())
+            .expect("CanonicalPathBuf should be fine");
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 2);
-            assert_eq!(actual.id2path.len(), 2);
-            assert!(actual.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert!(actual.id2path.contains_key(&ResourceId {
+        assert_eq!(
+            update
+                .added
+                .get(&added_key)
+                .expect("Key exists")
+                .clone(),
+            ResourceId {
                 data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
-            }));
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 1);
-
-            let added_key = fs::canonicalize(expected_path.clone())
-                .expect("CanonicalPathBuf should be fine");
-            assert_eq!(
-                update
-                    .added
-                    .get(&added_key)
-                    .expect("Key exists")
-                    .clone(),
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2
-                }
-            )
-        })
+                crc32: CRC32_2
+            }
+        )
     }
 
     #[test]
     fn index_new_should_index_new_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            let mut index = ResourceIndex::build(path.clone());
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let (_, new_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+        create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let mut index = ResourceIndex::build(path.clone());
+        let (_, new_path) =
+            create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+        let update = index
+            .index_new(&new_path)
+            .expect("Should update index correctly");
 
-            let update = index
-                .index_new(&new_path)
-                .expect("Should update index correctly");
+        assert_eq!(index.root, path.clone());
+        assert_eq!(index.path2id.len(), 2);
+        assert_eq!(index.id2path.len(), 2);
+        assert!(index.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_1,
+            crc32: CRC32_1,
+        }));
+        assert!(index.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_2,
+            crc32: CRC32_2,
+        }));
+        assert_eq!(index.collisions.len(), 0);
+        assert_eq!(index.size(), 2);
+        assert_eq!(update.deleted.len(), 0);
+        assert_eq!(update.added.len(), 1);
 
-            assert_eq!(index.root, path.clone());
-            assert_eq!(index.path2id.len(), 2);
-            assert_eq!(index.id2path.len(), 2);
-            assert!(index.id2path.contains_key(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1,
-            }));
-            assert!(index.id2path.contains_key(&ResourceId {
+        let added_key = fs::canonicalize(new_path.clone())
+            .expect("CanonicalPathBuf should be fine");
+
+        assert_eq!(
+            update
+                .added
+                .get(&added_key)
+                .expect("Key exists")
+                .clone(),
+            ResourceId {
                 data_size: FILE_SIZE_2,
-                crc32: CRC32_2,
-            }));
-            assert_eq!(index.collisions.len(), 0);
-            assert_eq!(index.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 1);
-
-            let added_key = fs::canonicalize(new_path.clone())
-                .expect("CanonicalPathBuf should be fine");
-            assert_eq!(
-                update
-                    .added
-                    .get(&added_key)
-                    .expect("Key exists")
-                    .clone(),
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2
-                }
-            )
-        })
+                crc32: CRC32_2
+            }
+        )
     }
 
     #[test]
     fn update_one_should_error_on_new_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
-            let mut index = ResourceIndex::build(path.clone());
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let (_, new_path) =
-                create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+        create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let mut index = ResourceIndex::build(path.clone());
+        let (_, new_path) =
+            create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+        let update = index.update_one(
+            &new_path,
+            ResourceId {
+                data_size: FILE_SIZE_2,
+                crc32: CRC32_2,
+            },
+        );
 
-            let update = index.update_one(
-                &new_path,
-                ResourceId {
-                    data_size: FILE_SIZE_2,
-                    crc32: CRC32_2,
-                },
-            );
-
-            assert!(update.is_err())
-        })
+        assert!(update.is_err())
     }
 
     #[test]
     fn update_one_should_index_delete_file_successfully() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let mut actual = ResourceIndex::build(path.clone());
+        create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+        let mut actual = ResourceIndex::build(path.clone());
+        let mut file_path = path.clone();
+        file_path.push(FILE_NAME_1);
+        std::fs::remove_file(file_path.clone())
+            .expect("Should remove file successfully");
+        let update = actual
+            .update_one(
+                &file_path.clone(),
+                ResourceId {
+                    data_size: FILE_SIZE_1,
+                    crc32: CRC32_1,
+                },
+            )
+            .expect("Should update index successfully");
 
-            let mut file_path = path.clone();
-            file_path.push(FILE_NAME_1);
-            std::fs::remove_file(file_path.clone())
-                .expect("Should remove file successfully");
+        assert_eq!(actual.root, path.clone());
+        assert_eq!(actual.path2id.len(), 0);
+        assert_eq!(actual.id2path.len(), 0);
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 0);
+        assert_eq!(update.deleted.len(), 1);
+        assert_eq!(update.added.len(), 0);
 
-            let update = actual
-                .update_one(
-                    &file_path.clone(),
-                    ResourceId {
-                        data_size: FILE_SIZE_1,
-                        crc32: CRC32_1,
-                    },
-                )
-                .expect("Should update index successfully");
-
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 0);
-            assert_eq!(update.deleted.len(), 1);
-            assert_eq!(update.added.len(), 0);
-
-            assert!(update.deleted.contains(&ResourceId {
-                data_size: FILE_SIZE_1,
-                crc32: CRC32_1
-            }))
-        })
+        assert!(update.deleted.contains(&ResourceId {
+            data_size: FILE_SIZE_1,
+            crc32: CRC32_1
+        }))
     }
 
     #[test]
     fn update_all_should_error_on_files_without_permissions() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
-            let (file, _) = create_file_at(
-                path.clone(),
-                Some(FILE_SIZE_2),
-                Some(FILE_NAME_2),
-            );
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let mut actual = ResourceIndex::build(path.clone());
+        create_file_at(path.clone(), Some(FILE_SIZE_1), Some(FILE_NAME_1));
+        let (file, _) =
+            create_file_at(path.clone(), Some(FILE_SIZE_2), Some(FILE_NAME_2));
+        let mut actual = ResourceIndex::build(path.clone());
 
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            #[cfg(target_os = "linux")]
-            file.set_permissions(Permissions::from_mode(0o222))
-                .expect("Should be fine");
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 2);
+        #[cfg(target_os = "linux")]
+        file.set_permissions(Permissions::from_mode(0o222))
+            .expect("Should be fine");
 
-            let update = actual
-                .update_all()
-                .expect("Should update index correctly");
+        let update = actual
+            .update_all()
+            .expect("Should update index correctly");
 
-            assert_eq!(actual.collisions.len(), 0);
-            assert_eq!(actual.size(), 2);
-            assert_eq!(update.deleted.len(), 0);
-            assert_eq!(update.added.len(), 0);
-        })
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 2);
+        assert_eq!(update.deleted.len(), 0);
+        assert_eq!(update.added.len(), 0);
     }
 
     // error cases
 
     #[test]
     fn update_one_should_not_update_absent_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
+
+        let mut missing_path = path.clone();
+        missing_path.push("missing/directory");
+        let mut actual = ResourceIndex::build(path.clone());
+        let old_id = ResourceId {
+            data_size: 1,
+            crc32: 2,
+        };
+        let result = actual
+            .update_one(&missing_path, old_id)
+            .map(|i| i.deleted.clone().take(&old_id))
+            .ok()
+            .flatten();
+
+        assert_eq!(
+            result,
+            Some(ResourceId {
                 data_size: 1,
                 crc32: 2,
-            };
-            let result = actual
-                .update_one(&missing_path, old_id)
-                .map(|i| i.deleted.clone().take(&old_id))
-                .ok()
-                .flatten();
-
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    crc32: 2,
-                })
-            );
-        })
+            })
+        );
     }
 
     #[test]
     fn update_one_should_index_new_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let mut actual = ResourceIndex::build(path.clone());
-            let old_id = ResourceId {
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
+
+        let mut missing_path = path.clone();
+        missing_path.push("missing/directory");
+        let mut actual = ResourceIndex::build(path.clone());
+        let old_id = ResourceId {
+            data_size: 1,
+            crc32: 2,
+        };
+        let result = actual
+            .update_one(&missing_path, old_id)
+            .map(|i| i.deleted.clone().take(&old_id))
+            .ok()
+            .flatten();
+
+        assert_eq!(
+            result,
+            Some(ResourceId {
                 data_size: 1,
                 crc32: 2,
-            };
-            let result = actual
-                .update_one(&missing_path, old_id)
-                .map(|i| i.deleted.clone().take(&old_id))
-                .ok()
-                .flatten();
-
-            assert_eq!(
-                result,
-                Some(ResourceId {
-                    data_size: 1,
-                    crc32: 2,
-                })
-            );
-        })
+            })
+        )
     }
 
     #[test]
     fn should_not_index_empty_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(0), None);
-            let actual = ResourceIndex::build(path.clone());
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
+        create_file_at(path.clone(), Some(0), None);
+        let actual = ResourceIndex::build(path.clone());
+
+        assert_eq!(actual.root, path.clone());
+        assert_eq!(actual.path2id.len(), 0);
+        assert_eq!(actual.id2path.len(), 0);
+        assert_eq!(actual.collisions.len(), 0);
     }
 
     #[test]
     fn should_not_index_hidden_file() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
-            let actual = ResourceIndex::build(path.clone());
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
+        create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
+        let actual = ResourceIndex::build(path.clone());
+
+        assert_eq!(actual.root, path.clone());
+        assert_eq!(actual.path2id.len(), 0);
+        assert_eq!(actual.id2path.len(), 0);
+        assert_eq!(actual.collisions.len(), 0);
     }
 
     #[test]
     fn should_not_index_1_empty_directory() {
-        run_test_and_clean_up(|path| {
-            create_dir_at(path.clone());
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
 
-            let actual = ResourceIndex::build(path.clone());
+        create_dir_at(path.clone());
 
-            assert_eq!(actual.root, path.clone());
-            assert_eq!(actual.path2id.len(), 0);
-            assert_eq!(actual.id2path.len(), 0);
-            assert_eq!(actual.collisions.len(), 0);
-        })
+        let actual = ResourceIndex::build(path.clone());
+
+        assert_eq!(actual.root, path.clone());
+        assert_eq!(actual.path2id.len(), 0);
+        assert_eq!(actual.id2path.len(), 0);
+        assert_eq!(actual.collisions.len(), 0);
     }
 
     #[test]
     fn discover_paths_should_not_walk_on_invalid_path() {
-        run_test_and_clean_up(|path| {
-            let mut missing_path = path.clone();
-            missing_path.push("missing/directory");
-            let actual = discover_files(missing_path);
-            assert_eq!(actual.len(), 0);
-        })
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
+
+        let mut missing_path = path.clone();
+        missing_path.push("missing/directory");
+        let actual = discover_files(missing_path);
+
+        assert_eq!(actual.len(), 0);
     }
 
     #[test]
