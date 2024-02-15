@@ -654,6 +654,7 @@ mod tests {
     use std::fs::Permissions;
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
+    use tempdir::TempDir;
 
     use std::path::PathBuf;
     use std::time::SystemTime;
@@ -713,24 +714,41 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // resource index build
-
+    /// A test to ensure that loading and storing an index works correctly
+    ///
+    /// This test stores an index, loads it, and then compares the loaded index
     #[test]
     fn resource_index_load_store() {
-        run_test_and_clean_up(|path| {
-            create_file_at(path.clone(), Some(3), Some(FILE_NAME_1));
-            create_file_at(path.clone(), Some(10), Some(FILE_NAME_2));
-            let index = ResourceIndex::build(path.clone());
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let temp_dir = temp_dir.into_path();
 
-            index
-                .store()
-                .expect("Should store index successfully");
+        // Create files inside the temporary directory
+        create_file_at(
+            temp_dir.to_owned(),
+            Some(FILE_SIZE_1),
+            Some(FILE_NAME_1),
+        );
+        create_file_at(
+            temp_dir.to_owned(),
+            Some(FILE_SIZE_2),
+            Some(FILE_NAME_2),
+        );
 
-            let loaded_index = ResourceIndex::load(path.clone())
-                .expect("Should load index successfully");
+        // Build the index from the temporary directory
+        let index = ResourceIndex::build(temp_dir.to_owned());
 
-            assert_eq!(index, loaded_index);
-        })
+        // Store the index
+        index
+            .store()
+            .expect("Should store index successfully");
+
+        // Load the index from the temporary directory
+        let loaded_index = ResourceIndex::load(temp_dir.to_owned())
+            .expect("Should load index successfully");
+
+        // Assert that the loaded index is equal to the original index
+        assert_eq!(index, loaded_index);
     }
 
     #[test]
