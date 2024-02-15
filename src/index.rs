@@ -78,7 +78,7 @@ impl ResourceIndex {
             &root_path.display()
         );
 
-        let entries = discover_paths(&root_path);
+        let entries = discover_files(&root_path);
         let entries = scan_entries(entries);
         let mut index = ResourceIndex {
             id2path: HashMap::new(),
@@ -177,7 +177,7 @@ impl ResourceIndex {
         log::debug!("Updating the index");
         log::trace!("[update] known paths: {:?}", self.path2id.keys());
 
-        let curr_entries = discover_paths(self.root.clone());
+        let curr_entries = discover_files(self.root.clone());
 
         //assuming that collections manipulation is
         // quicker than asking `path.exists()` for every path
@@ -544,40 +544,53 @@ impl ResourceIndex {
     }
 }
 
-fn discover_paths<P: AsRef<Path>>(root_path: P) -> HashMap<PathBuf, DirEntry> {
+/// Discovers all files under the specified root path
+///
+/// Returns a hashmap of canonical file paths to directory entries
+fn discover_files<P: AsRef<Path>>(root_path: P) -> HashMap<PathBuf, DirEntry> {
     log::debug!(
         "Discovering all files under path {}",
         root_path.as_ref().display()
     );
 
-    WalkDir::new(root_path)
+    let mut discovered_files = HashMap::new();
+    let walker = WalkDir::new(root_path)
         .into_iter()
-        .filter_entry(|entry| !is_hidden(entry))
-        .filter_map(|result| match result {
+        .filter_entry(|entry| {
+            // skip hidden files and directories
+            !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with('.')
+        });
+
+    for entry in walker {
+        match entry {
             Ok(entry) => {
-                let path = entry.path();
+                let path = entry.path().to_path_buf();
                 if !entry.file_type().is_dir() {
-                    match fs::canonicalize(path) {
-                        Ok(canonical_path) => Some((canonical_path, entry)),
+                    // canonicalize the path to avoid duplicates
+                    match fs::canonicalize(&path) {
+                        Ok(canonical_path) => {
+                            discovered_files.insert(canonical_path, entry);
+                        }
                         Err(msg) => {
                             log::warn!(
                                 "Couldn't canonicalize {}:\n{}",
                                 path.display(),
                                 msg
                             );
-                            None
                         }
                     }
-                } else {
-                    None
                 }
             }
             Err(msg) => {
                 log::error!("Error during walking: {}", msg);
-                None
             }
-        })
-        .collect()
+        }
+    }
+
+    discovered_files
 }
 
 fn scan_entry(path: &Path, metadata: Metadata) -> Result<IndexEntry> {
@@ -624,19 +637,11 @@ fn scan_entries(
         .collect()
 }
 
-fn is_hidden(entry: &DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .map(|s| s.starts_with('.'))
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::fs;
     use crate::id::ResourceId;
-    use crate::index::{discover_paths, IndexEntry};
+    use crate::index::{discover_files, IndexEntry};
     use crate::initialize;
     use crate::ResourceIndex;
     use std::fs::File;
@@ -1071,7 +1076,7 @@ mod tests {
         run_test_and_clean_up(|path| {
             let mut missing_path = path.clone();
             missing_path.push("missing/directory");
-            let actual = discover_paths(missing_path);
+            let actual = discover_files(missing_path);
             assert_eq!(actual.len(), 0);
         })
     }
