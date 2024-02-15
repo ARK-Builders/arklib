@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use itertools::Itertools;
 use log;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -443,22 +442,25 @@ impl ResourceIndex {
         };
     }
 
+    /// Removes the given resource ID from the index and returns an update
+    /// containing the deleted entries
     pub fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
-        let old_path = self
-            .path2id
-            .drain()
-            .filter_map(|(k, v)| {
-                if v.id == old_id {
-                    Some(k)
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for p in old_path {
-            self.path2id.remove(&p);
+        log::debug!("Forgetting a single entry in the index");
+
+        // Collect all paths associated with the old ID
+        let mut old_paths = Vec::new();
+        for (path, entry) in &self.path2id {
+            if entry.id == old_id {
+                old_paths.push(path.clone());
+            }
+        }
+
+        // Remove entries from path2id and id2path
+        for path in &old_paths {
+            self.path2id.remove(path);
         }
         self.id2path.remove(&old_id);
+
         let mut deleted = HashSet::new();
         deleted.insert(old_id);
 
