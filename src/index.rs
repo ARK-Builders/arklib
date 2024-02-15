@@ -442,6 +442,27 @@ impl ResourceIndex {
         };
     }
 
+    /// Inserts an entry into the index, updating associated data structures
+    ///
+    /// If the entry ID already exists in the index, it handles collisions
+    /// appropriately
+    fn insert_entry(&mut self, path: PathBuf, entry: IndexEntry) {
+        log::trace!("[add] {} by path {}", entry.id, path.display());
+        let id = entry.id;
+
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            self.id2path.entry(id)
+        {
+            e.insert(path.clone());
+        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
+            *nonempty += 1;
+        } else {
+            self.collisions.insert(id, 2);
+        }
+
+        self.path2id.insert(path, entry);
+    }
+
     /// Removes the given resource ID from the index and returns an update
     /// containing the deleted entries
     pub fn forget_id(&mut self, old_id: ResourceId) -> Result<IndexUpdate> {
@@ -470,23 +491,10 @@ impl ResourceIndex {
         })
     }
 
-    fn insert_entry(&mut self, path: PathBuf, entry: IndexEntry) {
-        log::trace!("[add] {} by path {}", entry.id, path.display());
-        let id = entry.id;
-
-        if let std::collections::hash_map::Entry::Vacant(e) =
-            self.id2path.entry(id)
-        {
-            e.insert(path.clone());
-        } else if let Some(nonempty) = self.collisions.get_mut(&id) {
-            *nonempty += 1;
-        } else {
-            self.collisions.insert(id, 2);
-        }
-
-        self.path2id.insert(path, entry);
-    }
-
+    /// Removes an entry with the specified path and updates the collision
+    /// information accordingly
+    ///
+    /// Returns an update containing the deleted entries
     fn forget_path(
         &mut self,
         path: &Path,
@@ -500,36 +508,29 @@ impl ResourceIndex {
                 "Any collision must involve at least 2 resources"
             );
             *collisions -= 1;
-
-            if *collisions == 1 {
+            if *collisions <= 1 {
                 self.collisions.remove(&old_id);
             }
 
             // minor performance issue:
             // we must find path of one of the collided
             // resources and use it as new value
-            let maybe_collided_path =
-                self.path2id.iter().find_map(|(path, entry)| {
-                    if entry.id == old_id {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                });
+            match self.id2path.get(&old_id) {
+                Some(collided_path) => {
+                    let old_path =
+                        self.id2path.insert(old_id, collided_path.clone());
 
-            if let Some(collided_path) = maybe_collided_path {
-                let old_path =
-                    self.id2path.insert(old_id, collided_path.clone());
-
-                debug_assert_eq!(
-                    old_path.unwrap().as_path(),
-                    path,
-                    "Must forget the requested path"
-                );
-            } else {
-                return Err(ArklibError::Collision(
-                    "Illegal state of collision tracker".into(),
-                ));
+                    debug_assert_eq!(
+                        old_path.unwrap().as_path(),
+                        path,
+                        "Must forget the requested path"
+                    );
+                }
+                None => {
+                    return Err(ArklibError::Collision(
+                        "Illegal state of collision tracker".into(),
+                    ));
+                }
             }
         } else {
             self.id2path.remove(&old_id);
