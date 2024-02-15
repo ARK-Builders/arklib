@@ -593,6 +593,9 @@ fn discover_files<P: AsRef<Path>>(root_path: P) -> HashMap<PathBuf, DirEntry> {
     discovered_files
 }
 
+/// Scans a single file entry and extracts its metadata to create an index entry
+///
+/// Returns an error if the path is a directory or if the file is empty
 fn scan_entry(path: &Path, metadata: Metadata) -> Result<IndexEntry> {
     if metadata.is_dir() {
         return Err(ArklibError::Path("Path is expected to be a file".into()));
@@ -600,10 +603,7 @@ fn scan_entry(path: &Path, metadata: Metadata) -> Result<IndexEntry> {
 
     let size = metadata.len();
     if size == 0 {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Empty resource",
-        ))?;
+        return Err(ArklibError::Path("Empty file".into()));
     }
 
     let id = ResourceId::compute(size, path)?;
@@ -612,6 +612,9 @@ fn scan_entry(path: &Path, metadata: Metadata) -> Result<IndexEntry> {
     Ok(IndexEntry { id, modified })
 }
 
+/// Scans multiple file entries and creates index entries for each one
+///
+/// Returns a hashmap of file paths to their corresponding index entries
 fn scan_entries(
     entries: HashMap<PathBuf, DirEntry>,
 ) -> HashMap<PathBuf, IndexEntry> {
