@@ -314,53 +314,52 @@ impl ResourceIndex {
         Ok(IndexUpdate { deleted, added })
     }
 
-    // the caller must ensure that:
-    // * the index is up-to-date except this single path
-    // * the path hasn't been indexed before
+    /// Indexes a new entry identified by the provided path, updating the index
+    /// accordingly.
+    ///
+    /// The caller must ensure that:
+    /// - The index is up-to-date except for this single path
+    /// - The path hasn't been indexed before
+    ///
+    /// Returns an error if:
+    /// - The path does not exist
+    /// - Metadata retrieval fails
     pub fn index_new(&mut self, path: &dyn AsRef<Path>) -> Result<IndexUpdate> {
-        log::debug!("Indexing a new path");
+        log::debug!(
+            "{}",
+            format!("Indexing a new entry: {}", path.as_ref().display())
+        );
 
         if !path.as_ref().exists() {
-            return Err(ArklibError::Path(
-                "Absent paths cannot be indexed".into(),
-            ));
+            return Err(ArklibError::Path(format!(
+                "Path {} doesn't exist",
+                path.as_ref().display()
+            )));
         }
 
         let path_buf = fs::canonicalize(path)?;
         let path = path_buf.as_path();
 
-        return match fs::metadata(path) {
-            Err(_) => {
-                return Err(ArklibError::Path(
-                    "Couldn't to retrieve file metadata".into(),
-                ));
-            }
-            Ok(metadata) => match scan_entry(path, metadata) {
-                Err(_) => {
-                    return Err(ArklibError::Path(
-                        "The path points to a directory or empty file".into(),
-                    ));
-                }
-                Ok(new_entry) => {
-                    let id = new_entry.id;
+        let metadata = fs::metadata(path).map_err(|e| {
+            ArklibError::Path(format!(
+                "Couldn't to retrieve file metadata: {}",
+                e
+            ))
+        })?;
+        let new_entry = scan_entry(path, metadata)?;
+        let id = new_entry.id;
+        if let Some(nonempty) = self.collisions.get_mut(&id) {
+            *nonempty += 1;
+        }
+        let mut added = HashMap::new();
+        added.insert(path_buf.clone(), id);
+        self.id2path.insert(id, path_buf.clone());
+        self.path2id.insert(path_buf, new_entry);
 
-                    if let Some(nonempty) = self.collisions.get_mut(&id) {
-                        *nonempty += 1;
-                    }
-
-                    let mut added = HashMap::new();
-                    added.insert(path_buf.clone(), id);
-
-                    self.id2path.insert(id, path_buf.clone());
-                    self.path2id.insert(path_buf, new_entry);
-
-                    Ok(IndexUpdate {
-                        added,
-                        deleted: HashSet::new(),
-                    })
-                }
-            },
-        };
+        Ok(IndexUpdate {
+            added,
+            deleted: HashSet::new(),
+        })
     }
 
     // the caller must ensure that:
