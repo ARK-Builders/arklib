@@ -655,12 +655,11 @@ mod tests {
     use super::fs;
     use crate::id::ResourceId;
     use crate::index::{discover_files, IndexEntry};
-    use crate::initialize;
     use crate::ResourceIndex;
     use std::fs::File;
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     use std::fs::Permissions;
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     use std::os::unix::fs::PermissionsExt;
     use tempdir::TempDir;
 
@@ -995,7 +994,7 @@ mod tests {
 
         assert_eq!(actual.collisions.len(), 0);
         assert_eq!(actual.size(), 2);
-        #[cfg(target_os = "linux")]
+        #[cfg(target_family = "unix")]
         file.set_permissions(Permissions::from_mode(0o222))
             .expect("Should be fine");
 
