@@ -139,34 +139,30 @@ impl ResourceIndex {
         Ok(())
     }
 
+    /// Provides the resource index, loading it if available or building it from
+    /// scratch if not
+    ///
+    /// If the index exists at the provided `root_path`, it will be loaded,
+    /// updated, and stored. If it doesn't exist, a new index will be built
+    /// from scratch
     pub fn provide<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         match Self::load(&root_path) {
             Ok(mut index) => {
                 log::debug!("Index loaded: {} entries", index.path2id.len());
 
-                match index.update_all() {
-                    Ok(update) => {
-                        log::debug!(
-                            "Index updated: {} added, {} deleted",
-                            update.added.len(),
-                            update.deleted.len()
-                        );
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to update index: {}",
-                            e.to_string()
-                        );
-                    }
-                }
+                let update = index.update_all()?;
+                log::debug!(
+                    "Index updated: {} added, {} deleted",
+                    update.added.len(),
+                    update.deleted.len()
+                );
+                index.store()?;
 
-                if let Err(e) = index.store() {
-                    log::error!("{}", e.to_string());
-                }
                 Ok(index)
             }
             Err(e) => {
                 log::warn!("{}", e.to_string());
+                log::info!("Building the index from scratch");
                 Ok(Self::build(root_path))
             }
         }
