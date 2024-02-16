@@ -851,6 +851,27 @@ mod tests {
     }
 
     #[test]
+    fn index_new_adds_canonical_path() {
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
+
+        let (_, new_path) =
+            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let mut index = ResourceIndex::build(path.clone());
+
+        let canonical_path =
+            fs::canonicalize(&new_path).expect("Failed to canonicalize path");
+
+        let update = index.index_new(&new_path);
+
+        // Ensure that the non-canonical path is added to the index with its
+        // canonicalized form
+        assert!(update.is_ok());
+        assert_eq!(index.id2path.values().next(), Some(&canonical_path));
+    }
+
+    #[test]
     fn index_new_should_index_new_file_successfully() {
         let temp_dir = TempDir::new("arklib_test")
             .expect("Failed to create temporary directory");
@@ -1095,6 +1116,30 @@ mod tests {
         let actual = discover_files(missing_path);
 
         assert_eq!(actual.len(), 0);
+    }
+
+    #[test]
+    fn discover_files_adds_canonical_paths() {
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let path = temp_dir.into_path();
+
+        let (_, file1_path) =
+            create_file_at(path.clone(), Some(FILE_SIZE_1), None);
+        let (_, file2_path) =
+            create_file_at(path.clone(), Some(FILE_SIZE_2), None);
+
+        let discovered_files = discover_files(path.clone());
+
+        let canonical_file1_path =
+            fs::canonicalize(&file1_path).expect("Failed to canonicalize path");
+        let canonical_file2_path =
+            fs::canonicalize(&file2_path).expect("Failed to canonicalize path");
+
+        // Ensure that the discovered files contain the canonical paths
+        assert_eq!(discovered_files.len(), 2);
+        assert!(discovered_files.contains_key(&canonical_file1_path));
+        assert!(discovered_files.contains_key(&canonical_file2_path));
     }
 
     #[test]
