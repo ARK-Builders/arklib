@@ -357,11 +357,23 @@ impl ResourceIndex {
         })
     }
 
-    // the caller must ensure that:
-    // * the index is up-to-date except this single path
-    // * the path has been indexed before
-    // * the path maps into `old_id`
-    // * the content by the path has been modified
+    /// Updates a single entry in the index with a new resource located at the
+    /// specified path, replacing the old resource associated with the given
+    /// ID.
+    ///
+    /// # Restrictions
+    ///
+    /// The caller must ensure that:
+    /// * the index is up-to-date except for this single path
+    /// * the path has been indexed before
+    /// * the path maps into `old_id`
+    /// * the content by the path has been modified
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path does not exist, if the path is a directory
+    /// or an empty file, if the index cannot find the specified path, or if
+    /// the content of the path has not been modified.
     pub fn update_one(
         &mut self,
         path: &dyn AsRef<Path>,
@@ -382,60 +394,55 @@ impl ResourceIndex {
             self.path2id[path]
         );
 
-        return match fs::metadata(path) {
-            Err(_) => {
-                // updating the index after resource removal
-                // is a correct scenario
-                self.forget_path(path, old_id)
+        let metadata = fs::metadata(path);
+        if metadata.is_err() {
+            log::debug!("Path {:?} was removed", &path);
+            return self.forget_id(old_id);
+        }
+        // we are sure that the path exists
+        let metadata = metadata.unwrap();
+
+        let new_entry = scan_entry(path, metadata);
+        if new_entry.is_err() {
+            log::debug!("Path {:?} is a directory or empty file", &path);
+            return self.forget_path(path, old_id);
+        }
+        // we are sure that the path is a file and not empty
+        let new_entry = new_entry.unwrap();
+
+        // valid resource exists by the path
+
+        let curr_entry = self.path2id.get(path).ok_or(
+            // if the path is not indexed, then we can't have
+            // `old_id`
+            // if you want to index new path, use `index_new` method
+            ArklibError::Path("Couldn't find the path in the index".into()),
+        )?;
+
+        if curr_entry.id == new_entry.id {
+            // in rare cases we are here due to hash collision
+            if curr_entry.modified == new_entry.modified {
+                log::warn!("path {:?} was not modified", &path);
+            } else {
+                log::warn!("path {:?} was modified but not its content", &path);
             }
-            Ok(metadata) => {
-                match scan_entry(path, metadata) {
-                    Err(_) => {
-                        // a directory or empty file exists by the path
-                        self.forget_path(path, old_id)
-                    }
-                    Ok(new_entry) => {
-                        // valid resource exists by the path
 
-                        let curr_entry = &self.path2id.get(path);
-                        if curr_entry.is_none() {
-                            // if the path is not indexed, then we can't have
-                            // `old_id` if you want
-                            // to index new path, use `index_new` method
-                            return Err(ArklibError::Path(
-                                "Couldn't find the path in the index".into(),
-                            ));
-                        }
-                        let curr_entry = curr_entry.unwrap();
+            // the caller must have ensured that the path was
+            // indeed update
+            return Err(ArklibError::Collision(
+                "New content has the same id".into(),
+            ));
+        }
 
-                        if curr_entry.id == new_entry.id {
-                            // in rare cases we are here due to hash collision
-                            if curr_entry.modified == new_entry.modified {
-                                log::warn!("path {:?} was not modified", &path);
-                            } else {
-                                log::warn!("path {:?} was modified but not its content", &path);
-                            }
+        // new resource exists by the path
+        return self.forget_path(path, old_id).map(|mut update| {
+            update
+                .added
+                .insert(path_buf.clone(), new_entry.id);
+            self.insert_entry(path_buf, new_entry);
 
-                            // the caller must have ensured that the path was
-                            // indeed update
-                            return Err(ArklibError::Collision(
-                                "New content has the same id".into(),
-                            ));
-                        }
-
-                        // new resource exists by the path
-                        self.forget_path(path, old_id).map(|mut update| {
-                            update
-                                .added
-                                .insert(path_buf.clone(), new_entry.id);
-                            self.insert_entry(path_buf, new_entry);
-
-                            update
-                        })
-                    }
-                }
-            }
-        };
+            update
+        });
     }
 
     /// Inserts an entry into the index, updating associated data structures
