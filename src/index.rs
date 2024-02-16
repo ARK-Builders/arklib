@@ -168,13 +168,17 @@ impl ResourceIndex {
         }
     }
 
+    /// Updates the index based on the current state of the file system
+    ///
+    /// Returns an [`IndexUpdate`] object containing the paths of deleted and
+    /// added resources
     pub fn update_all(&mut self) -> Result<IndexUpdate> {
         log::debug!("Updating the index");
         log::trace!("[update] known paths: {:?}", self.path2id.keys());
 
         let curr_entries = discover_files(self.root.clone());
 
-        //assuming that collections manipulation is
+        // assuming that collections manipulation is
         // quicker than asking `path.exists()` for every path
         let curr_paths: Paths = curr_entries.keys().cloned().collect();
         let prev_paths: Paths = self.path2id.keys().cloned().collect();
@@ -195,95 +199,97 @@ impl ResourceIndex {
             .collect();
 
         log::debug!("Checking updated paths");
-        let updated_paths: HashMap<PathBuf, DirEntry> = curr_entries
-            .into_iter()
-            .filter(|(path, dir_entry)| {
-                if !preserved_paths.contains(path) {
-                    false
-                } else {
-                    let our_entry = &self.path2id[path];
-                    let prev_modified = our_entry.modified;
+        let mut updated_paths: HashMap<PathBuf, DirEntry> = HashMap::new();
+        for (path, dir_entry) in curr_entries.iter() {
+            if !preserved_paths.contains(path) {
+                continue;
+            }
 
-                    let result = dir_entry.metadata();
-                    match result {
-                        Err(msg) => {
-                            log::error!(
-                                "Couldn't retrieve metadata for {}: {}",
-                                &path.display(),
-                                msg
-                            );
-                            false
-                        }
-                        Ok(metadata) => match metadata.modified() {
-                            Err(msg) => {
-                                log::error!(
-                                    "Couldn't retrieve timestamp for {}: {}",
-                                    &path.display(),
-                                    msg
-                                );
-                                false
-                            }
-                            Ok(curr_modified) => {
-                                let elapsed = curr_modified
-                                    .duration_since(prev_modified)
-                                    .unwrap();
+            let our_entry = &self.path2id[path];
+            let prev_modified = our_entry.modified;
 
-                                let was_updated =
-                                    elapsed >= RESOURCE_UPDATED_THRESHOLD;
-                                if was_updated {
-                                    log::trace!(
-                                        "[update] modified {} by path {}
-                                        \twas {:?}
-                                        \tnow {:?}
-                                        \telapsed {:?}",
-                                        our_entry.id,
-                                        path.display(),
-                                        prev_modified,
-                                        curr_modified,
-                                        elapsed
-                                    );
-                                }
+            let result = dir_entry.metadata();
+            if result.is_err() {
+                log::error!(
+                    "Couldn't retrieve metadata for {}: {}",
+                    &path.display(),
+                    result.err().unwrap()
+                );
+                continue;
+            }
+            let metadata = result.unwrap();
 
-                                was_updated
-                            }
-                        },
-                    }
-                }
-            })
-            .collect();
+            let result = metadata.modified();
+            if result.is_err() {
+                log::error!(
+                    "Couldn't retrieve timestamp for {}: {}",
+                    &path.display(),
+                    result.err().unwrap()
+                );
+                continue;
+            }
+            let curr_modified = result.unwrap();
+
+            let elapsed = curr_modified
+                .duration_since(prev_modified)
+                .map_err(|e| {
+                    ArklibError::Other(anyhow!("SystemTime error: {}", e))
+                })?;
+
+            if elapsed >= RESOURCE_UPDATED_THRESHOLD {
+                log::trace!(
+                    "[update] modified {} by path {}
+                                \twas {:?}
+                                \tnow {:?}
+                                \telapsed {:?}",
+                    our_entry.id,
+                    path.display(),
+                    prev_modified,
+                    curr_modified,
+                    elapsed
+                );
+                updated_paths.insert(path.clone(), dir_entry.clone());
+            }
+        }
 
         let mut deleted: HashSet<ResourceId> = HashSet::new();
-
-        // treating both deleted and updated paths as deletions
-        prev_paths
+        // Get the paths to be deleted
+        let paths_to_delete = prev_paths
             .difference(&preserved_paths)
             .cloned()
-            .chain(updated_paths.keys().cloned())
-            .for_each(|path| {
-                if let Some(entry) = self.path2id.remove(&path) {
-                    let k = self.collisions.remove(&entry.id).unwrap_or(1);
-                    if k > 1 {
-                        self.collisions.insert(entry.id, k - 1);
-                    } else {
-                        log::trace!(
-                            "[delete] {} by path {}",
-                            entry.id,
-                            path.display()
-                        );
-                        self.id2path.remove(&entry.id);
-                        deleted.insert(entry.id);
-                    }
+            .chain(updated_paths.keys().cloned());
+        // Process each path: remove from the index and update the collisions
+        for path in paths_to_delete {
+            if let Some(entry) = self.path2id.remove(&path) {
+                let k = self.collisions.remove(&entry.id).unwrap_or(1);
+                if k > 1 {
+                    self.collisions.insert(entry.id, k - 1);
                 } else {
-                    log::warn!("Path {} was not known", path.display());
+                    log::trace!(
+                        "[delete] {} by path {}",
+                        entry.id,
+                        path.display()
+                    );
+                    self.id2path.remove(&entry.id);
+                    deleted.insert(entry.id);
                 }
-            });
+            } else {
+                log::warn!(
+                    "Path {} was not found in the index",
+                    path.display()
+                );
+            }
+        }
 
-        let added: HashMap<PathBuf, IndexEntry> = scan_entries(updated_paths)
+        // Scan entries for updated paths
+        log::debug!("Checking added paths");
+        let mut updated_entries = scan_entries(updated_paths);
+        let created_entries = scan_entries(created_paths);
+        // Combine updated and created entries
+        updated_entries.extend(created_entries);
+        // Filter entries not contained in id2path
+        let added: HashMap<PathBuf, IndexEntry> = updated_entries
             .into_iter()
-            .chain({
-                log::debug!("Checking added paths");
-                scan_entries(created_paths).into_iter()
-            })
             .filter(|(_, entry)| !self.id2path.contains_key(&entry.id))
             .collect();
 
@@ -297,7 +303,6 @@ impl ResourceIndex {
                     path.display()
                 );
             }
-
             self.insert_entry(path.clone(), entry.clone());
         }
 
