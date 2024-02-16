@@ -440,14 +440,14 @@ impl ResourceIndex {
         }
 
         // new resource exists by the path
-        return self.forget_path(path, old_id).map(|mut update| {
+        self.forget_path(path, old_id).map(|mut update| {
             update
                 .added
                 .insert(path_buf.clone(), new_entry.id);
             self.insert_entry(path_buf, new_entry);
 
             update
-        });
+        })
     }
 
     /// Inserts an entry into the index, updating associated data structures
