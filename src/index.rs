@@ -586,6 +586,7 @@ fn discover_files<P: AsRef<Path>>(root_path: P) -> HashMap<PathBuf, DirEntry> {
 
     let mut discovered_files = HashMap::new();
     let walker = WalkDir::new(root_path)
+        .min_depth(1)
         .into_iter()
         .filter_entry(|entry| {
             // skip hidden files and directories
