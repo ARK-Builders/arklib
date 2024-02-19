@@ -26,11 +26,22 @@ pub struct IndexEntry {
     pub id: ResourceId,
 }
 
-/// Represents an index of resources in the system
+/// Represents an index of resources stored as files
+/// in the filesystem under some prefix, or "root".
 ///
-/// This struct maintains mappings between resource IDs and their corresponding
-/// file paths, as well as mappings between file paths and index entries
-/// Additionally, it keeps track of collisions that occur during indexing
+/// This struct maintains a mapping from resource IDs to their corresponding
+/// file paths, as well as the mapping of the opposite direction from file
+/// paths to index entries, which are simply resource IDs with modification
+/// timestamps.
+///
+/// The paths stored in the mappings are not absolute paths, but are relative
+/// to the "root". See methods `TODO` and `TODO` in the API, which can provide
+/// the end users with absolute/canonical(TODO) paths for the convenince.
+/// Otherwise, the end user is responsible for managing the working dir
+/// and relative paths resolution.
+///
+/// Additionally, it keeps track of collisions that occur during
+/// indexing using non-cryptographic hash functions.
 #[serde_as]
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct ResourceIndex {
@@ -45,10 +56,14 @@ pub struct ResourceIndex {
     root: PathBuf,
 }
 
-/// Represents an update to the resource index
+/// Represents an external modification detected in the filesystem.
 ///
 /// This struct holds information about resources that have been deleted
-/// or added during an update operation on the resource index
+/// or added during an update operation on the resource index. Modification
+/// of a resource is always represented as a deletion followed by an addition.
+/// Renaming of a file doesn't really introduces any new resources, but
+/// for consistency is represented same as modification
+/// of the underlying file.
 #[derive(PartialEq, Debug)]
 pub struct IndexUpdate {
     /// Set of resource IDs that have been deleted
@@ -60,7 +75,7 @@ pub struct IndexUpdate {
 impl ResourceIndex {
     /// Returns the number of entries in the index
     ///
-    /// Note that the actual size is lower in presence of collisions
+    /// Note that the amount of resource can be lower in presence of collisions
     pub fn size(&self) -> usize {
         self.path2id.len()
     }
@@ -96,8 +111,12 @@ impl ResourceIndex {
     /// Loads a previously stored resource index from the root path
     ///
     /// This function reads the index from the file system and returns a new
-    /// [`ResourceIndex`] instance. It looks for the index fie in
-    /// `root_path/.ark/index`
+    /// [`ResourceIndex`] instance. It looks for the index file in
+    /// `$root_path/.ark/index`.
+    ///
+    /// Note that the loaded index can be outdated and `update_all` needs to
+    /// be called explicitly by the end-user. For automated updating and
+    /// persisting the new index version, use [`provide`] function.
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         let index_path = root_path
             .as_ref()
@@ -115,7 +134,7 @@ impl ResourceIndex {
     /// Stores the resource index to the file system
     ///
     /// This function writes the index to the file system. It writes the index
-    /// to `root_path/.ark/index` and creates the directory if it does not exist
+    /// to `$root_path/.ark/index` and creates the directory if it's absent.
     pub fn store(&self) -> Result<()> {
         log::info!("Storing the index to file");
         let start = SystemTime::now();
