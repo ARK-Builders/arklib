@@ -86,7 +86,9 @@ impl ResourceIndex {
     /// the root path, constructs index entries for each resource found, and
     /// populates the resource index
     pub fn build<P: AsRef<Path>>(root_path: P) -> Self {
-        let root_path = root_path.as_ref().to_owned();
+        let root_path = fs::canonicalize(root_path.as_ref())
+            .expect("Failed to canonicalize root path");
+
         log::info!(
             "Building the index from scratch for directory: {}",
             &root_path.display()
@@ -767,7 +769,10 @@ mod tests {
         create_file_at(temp_dir.to_owned(), Some(FILE_SIZE_1), None);
         let actual = ResourceIndex::build(temp_dir.to_owned());
 
-        assert_eq!(actual.root, temp_dir.to_owned());
+        let canonical_path = fs::canonicalize(temp_dir.clone())
+            .expect("CanonicalPathBuf should be fine");
+
+        assert_eq!(actual.root, canonical_path.to_owned());
         assert_eq!(actual.path2id.len(), 1);
         assert_eq!(actual.id2path.len(), 1);
         assert!(actual.id2path.contains_key(&ResourceId {
@@ -788,7 +793,9 @@ mod tests {
         create_file_at(path.to_owned(), Some(FILE_SIZE_1), None);
         let actual = ResourceIndex::build(path.to_owned());
 
-        assert_eq!(actual.root, path.to_owned());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(actual.root, canonical_path.to_owned());
         assert_eq!(actual.path2id.len(), 2);
         assert_eq!(actual.id2path.len(), 1);
         assert!(actual.id2path.contains_key(&ResourceId {
@@ -844,7 +851,9 @@ mod tests {
             .update_all()
             .expect("Should update index correctly");
 
-        assert_eq!(actual.root, path.to_owned());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(actual.root, canonical_path);
         assert_eq!(actual.path2id.len(), 2);
         assert_eq!(actual.id2path.len(), 2);
         assert!(actual.id2path.contains_key(&ResourceId {
@@ -911,7 +920,9 @@ mod tests {
             .index_new(&new_path)
             .expect("Should update index correctly");
 
-        assert_eq!(index.root, path.clone());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(index.root, canonical_path.clone());
         assert_eq!(index.path2id.len(), 2);
         assert_eq!(index.id2path.len(), 2);
         assert!(index.id2path.contains_key(&ResourceId {
@@ -986,7 +997,9 @@ mod tests {
             )
             .expect("Should update index successfully");
 
-        assert_eq!(actual.root, path.clone());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(actual.root, canonical_path);
         assert_eq!(actual.path2id.len(), 0);
         assert_eq!(actual.id2path.len(), 0);
         assert_eq!(actual.collisions.len(), 0);
@@ -1094,7 +1107,9 @@ mod tests {
         create_file_at(path.clone(), Some(0), None);
         let actual = ResourceIndex::build(path.clone());
 
-        assert_eq!(actual.root, path.clone());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(actual.root, canonical_path);
         assert_eq!(actual.path2id.len(), 0);
         assert_eq!(actual.id2path.len(), 0);
         assert_eq!(actual.collisions.len(), 0);
@@ -1109,7 +1124,9 @@ mod tests {
         create_file_at(path.clone(), Some(FILE_SIZE_1), Some(".hidden"));
         let actual = ResourceIndex::build(path.clone());
 
-        assert_eq!(actual.root, path.clone());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(actual.root, canonical_path);
         assert_eq!(actual.path2id.len(), 0);
         assert_eq!(actual.id2path.len(), 0);
         assert_eq!(actual.collisions.len(), 0);
@@ -1125,7 +1142,9 @@ mod tests {
 
         let actual = ResourceIndex::build(path.clone());
 
-        assert_eq!(actual.root, path.clone());
+        let canonical_path = fs::canonicalize(path.clone())
+            .expect("CanonicalPathBuf should be fine");
+        assert_eq!(actual.root, canonical_path);
         assert_eq!(actual.path2id.len(), 0);
         assert_eq!(actual.id2path.len(), 0);
         assert_eq!(actual.collisions.len(), 0);
