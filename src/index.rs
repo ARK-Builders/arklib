@@ -1188,6 +1188,29 @@ mod tests {
     }
 
     #[test]
+    fn test_index_hidden_directory() {
+        let temp_dir = TempDir::new(".arklib_test")
+            .expect("Failed to create temporary directory");
+        let temp_dir = temp_dir.into_path();
+
+        create_file_at(temp_dir.to_owned(), Some(FILE_SIZE_1), None);
+        let actual = ResourceIndex::build(temp_dir.to_owned());
+
+        let canonical_path = fs::canonicalize(temp_dir.clone())
+            .expect("CanonicalPathBuf should be fine");
+
+        assert_eq!(actual.root, canonical_path.to_owned());
+        assert_eq!(actual.path2id.len(), 1);
+        assert_eq!(actual.id2path.len(), 1);
+        assert!(actual.id2path.contains_key(&ResourceId {
+            data_size: FILE_SIZE_1,
+            crc32: CRC32_1,
+        }));
+        assert_eq!(actual.collisions.len(), 0);
+        assert_eq!(actual.size(), 1);
+    }
+
+    #[test]
     fn index_entry_order() {
         let old1 = IndexEntry {
             id: ResourceId {
