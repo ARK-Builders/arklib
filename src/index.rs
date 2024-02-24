@@ -12,7 +12,8 @@ use walkdir::{DirEntry, WalkDir};
 
 use log;
 
-use crate::id::ResourceId;
+use crate::resource::ResourceId;
+use crate::resource::ResourceIdTrait;
 use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]
@@ -666,9 +667,9 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::ResourceId;
     use crate::index::{discover_paths, IndexEntry};
     use crate::initialize;
+    use crate::resource::ResourceId;
     use crate::ResourceIndex;
     use canonical_path::CanonicalPathBuf;
     use std::fs::File;

@@ -7,11 +7,11 @@ pub mod errors;
 pub use errors::{ArklibError, Result};
 
 pub mod app_id;
-pub mod id;
 pub mod index;
 
 pub mod link;
 pub mod pdf;
+pub mod resource;
 
 mod atomic;
 mod storage;

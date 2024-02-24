@@ -1,4 +1,5 @@
-use crate::id::ResourceId;
+use crate::resource::ResourceId;
+use crate::resource::ResourceIdTrait;
 use crate::storage::meta::store_metadata;
 use crate::storage::prop::store_properties;
 use crate::{
