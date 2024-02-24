@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use crate::id::ResourceId;
+use crate::resource::ResourceId;
 use crate::util::json::merge;
 use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 

@@ -9,7 +9,12 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
 
+use crate::resource::ResourceIdTrait;
 use crate::{ArklibError, Result};
+
+const KILOBYTE: u64 = 1024;
+const MEGABYTE: u64 = 1024 * KILOBYTE;
+const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
 #[derive(
     Eq,
@@ -23,18 +28,18 @@ use crate::{ArklibError, Result};
     Deserialize,
     Serialize,
 )]
-pub struct ResourceId {
+pub struct ResourceIdCrc32 {
     pub data_size: u64,
     pub crc32: u32,
 }
 
-impl Display for ResourceId {
+impl Display for ResourceIdCrc32 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}-{}", self.data_size, self.crc32)
     }
 }
 
-impl FromStr for ResourceId {
+impl FromStr for ResourceIdCrc32 {
     type Err = ArklibError;
 
     fn from_str(s: &str) -> Result<Self> {
@@ -42,15 +47,18 @@ impl FromStr for ResourceId {
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
         let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceIdCrc32 { data_size, crc32 })
     }
 }
 
-impl ResourceId {
-    pub fn compute<P: AsRef<Path>>(
-        data_size: u64,
-        file_path: P,
-    ) -> Result<Self> {
+impl ResourceIdTrait<'_> for ResourceIdCrc32 {
+    type HashType = u32;
+
+    fn get_hash(&self) -> Self::HashType {
+        self.crc32
+    }
+
+    fn compute<P: AsRef<Path>>(data_size: u64, file_path: P) -> Result<Self> {
         log::trace!(
             "[compute] file {} with size {} mb",
             file_path.as_ref().display(),
@@ -62,18 +70,18 @@ impl ResourceId {
             .open(file_path.as_ref())?;
 
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, source);
-        ResourceId::compute_reader(data_size, &mut reader)
+        ResourceIdCrc32::compute_reader(data_size, &mut reader)
     }
 
-    pub fn compute_bytes(bytes: &[u8]) -> Result<Self> {
+    fn compute_bytes(bytes: &[u8]) -> Result<Self> {
         let data_size = bytes.len().try_into().map_err(|_| {
             ArklibError::Other(anyhow!("Can't convert usize to u64"))
         })?; //.unwrap();
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
-        ResourceId::compute_reader(data_size, &mut reader)
+        ResourceIdCrc32::compute_reader(data_size, &mut reader)
     }
 
-    pub fn compute_reader<R: Read>(
+    fn compute_reader<R: Read>(
         data_size: u64,
         reader: &mut BufReader<R>,
     ) -> Result<Self> {
@@ -104,13 +112,9 @@ impl ResourceId {
         log::trace!("[compute] checksum: {:#02x}", crc32);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceId { data_size, crc32 })
+        Ok(ResourceIdCrc32 { data_size, crc32 })
     }
 }
-
-const KILOBYTE: u64 = 1024;
-const MEGABYTE: u64 = 1024 * KILOBYTE;
-const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
 #[cfg(test)]
 mod tests {
@@ -132,23 +136,23 @@ mod tests {
             })
             .len();
 
-        let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.crc32, 0x342a3d4a);
+        let id1 = ResourceIdCrc32::compute(data_size, file_path).unwrap();
+        assert_eq!(id1.get_hash(), 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
-        let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.crc32, 0x342a3d4a);
+        let id2 = ResourceIdCrc32::compute_bytes(raw_bytes.as_slice()).unwrap();
+        assert_eq!(id2.get_hash(), 0x342a3d4a);
         assert_eq!(id2.data_size, 128760);
     }
 
     #[test]
     fn resource_id_order() {
-        let id1 = ResourceId {
+        let id1 = ResourceIdCrc32 {
             data_size: 1,
             crc32: 2,
         };
-        let id2 = ResourceId {
+        let id2 = ResourceIdCrc32 {
             data_size: 2,
             crc32: 1,
         };

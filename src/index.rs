@@ -18,6 +18,9 @@ use crate::{id::ResourceId, ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 pub const RESOURCE_UPDATED_THRESHOLD: Duration = Duration::from_millis(1);
 pub type Paths = HashSet<PathBuf>;
+use crate::resource::ResourceId;
+use crate::resource::ResourceIdTrait;
+use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 /// IndexEntry represents a [`ResourceId`] and the time it was last modified
 #[derive(
@@ -750,8 +753,9 @@ fn scan_entries(
 #[cfg(test)]
 mod tests {
     use super::fs;
-    use crate::id::ResourceId;
     use crate::index::{discover_files, IndexEntry};
+    use crate::initialize;
+    use crate::resource::ResourceId;
     use crate::ResourceIndex;
     use std::fs::File;
     #[cfg(target_family = "unix")]
