@@ -12,8 +12,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use log;
 
-use crate::resource::ResourceId;
-use crate::resource::ResourceIdTrait;
+use crate::resource::{ResourceId, ResourceIdTrait};
 use crate::{ArklibError, Result, ARK_FOLDER, INDEX_PATH};
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Hash, Clone, Debug)]

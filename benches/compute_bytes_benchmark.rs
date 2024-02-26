@@ -1,5 +1,4 @@
-use arklib::resource::ResourceId;
-use arklib::resource::ResourceIdTrait;
+use arklib::resource::{ResourceId, ResourceIdTrait};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::*;
 use std::fs;
