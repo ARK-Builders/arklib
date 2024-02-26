@@ -30,12 +30,12 @@ const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 )]
 pub struct ResourceIdCrc32 {
     pub data_size: u64,
-    pub crc32: u32,
+    pub hash: u32,
 }
 
 impl Display for ResourceIdCrc32 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.data_size, self.crc32)
+        write!(f, "{}-{}", self.data_size, self.hash)
     }
 }
 
@@ -45,9 +45,9 @@ impl FromStr for ResourceIdCrc32 {
     fn from_str(s: &str) -> Result<Self> {
         let (l, r) = s.split_once('-').ok_or(ArklibError::Parse)?;
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
-        let crc32: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
+        let hash: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
 
-        Ok(ResourceIdCrc32 { data_size, crc32 })
+        Ok(ResourceIdCrc32 { data_size, hash })
     }
 }
 
@@ -55,7 +55,7 @@ impl ResourceIdTrait<'_> for ResourceIdCrc32 {
     type HashType = u32;
 
     fn get_hash(&self) -> Self::HashType {
-        self.crc32
+        self.hash
     }
 
     fn compute<P: AsRef<Path>>(data_size: u64, file_path: P) -> Result<Self> {
@@ -107,12 +107,12 @@ impl ResourceIdTrait<'_> for ResourceIdCrc32 {
                 })?;
         }
 
-        let crc32: u32 = hasher.finalize();
+        let hash: u32 = hasher.finalize();
         log::trace!("[compute] {} bytes has been read", bytes_read);
-        log::trace!("[compute] checksum: {:#02x}", crc32);
+        log::trace!("[compute] checksum: {:#02x}", hash);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceIdCrc32 { data_size, crc32 })
+        Ok(ResourceIdCrc32 { data_size, hash })
     }
 }
 
@@ -150,11 +150,11 @@ mod tests {
     fn resource_id_order() {
         let id1 = ResourceIdCrc32 {
             data_size: 1,
-            crc32: 2,
+            hash: 2,
         };
         let id2 = ResourceIdCrc32 {
             data_size: 2,
-            crc32: 1,
+            hash: 1,
         };
 
         assert!(id1 < id2);
