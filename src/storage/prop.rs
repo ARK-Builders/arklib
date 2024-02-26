@@ -81,7 +81,7 @@ mod tests {
         log::debug!("temporary root: {}", root.display());
 
         let id = ResourceId {
-            crc32: 0x342a3d4a,
+            hash: 0x342a3d4a,
             data_size: 1,
         };
 
