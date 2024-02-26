@@ -32,19 +32,6 @@ pub trait ResourceIdTrait<'de>:
     + Serialize
     + Deserialize<'de>
     + Copy
-where
-    Self::HashType: Display
-        + FromStr
-        + Clone
-        + PartialEq
-        + Eq
-        + Ord
-        + PartialOrd
-        + Debug
-        + Hash
-        + Serialize
-        + Deserialize<'de>
-        + Copy,
 {
     /// Associated type representing the hash used by this resource identifier.
     type HashType;
