@@ -9,9 +9,10 @@ use std::path::Path;
 
 use crate::Result;
 
+mod blake3;
 mod crc32;
 
-pub use crc32::ResourceIdCrc32 as ResourceId;
+pub use blake3::ResourceIdBlake3 as ResourceId;
 
 /// This trait defines a generic type representing a resource identifier.
 ///

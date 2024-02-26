@@ -688,8 +688,16 @@ mod tests {
     const FILE_NAME_2: &str = "test2.txt";
     const FILE_NAME_3: &str = "test3.txt";
 
-    const CRC32_1: u32 = 3817498742;
-    const CRC32_2: u32 = 1804055020;
+    const HASH_1: [u8; 32] = [
+        64, 119, 46, 20, 183, 102, 90, 142, 127, 9, 222, 65, 218, 9, 196, 25,
+        26, 202, 193, 50, 165, 152, 228, 227, 99, 208, 118, 225, 144, 119, 5,
+        122,
+    ];
+    const HASH_2: [u8; 32] = [
+        202, 233, 183, 241, 82, 209, 38, 41, 103, 152, 11, 119, 235, 56, 59,
+        18, 121, 106, 131, 25, 189, 21, 77, 54, 247, 93, 201, 240, 108, 210,
+        166, 154,
+    ];
 
     fn get_temp_dir() -> PathBuf {
         create_dir_at(std::env::temp_dir())
@@ -749,7 +757,7 @@ mod tests {
             assert_eq!(actual.id2path.len(), 1);
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                hash: CRC32_1,
+                hash: HASH_1,
             }));
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 1);
@@ -769,7 +777,7 @@ mod tests {
             assert_eq!(actual.id2path.len(), 1);
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                hash: CRC32_1,
+                hash: HASH_1,
             }));
             assert_eq!(actual.collisions.len(), 1);
             assert_eq!(actual.size(), 2);
@@ -827,11 +835,11 @@ mod tests {
             assert_eq!(actual.id2path.len(), 2);
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                hash: CRC32_1,
+                hash: HASH_1,
             }));
             assert!(actual.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_2,
-                hash: CRC32_2,
+                hash: HASH_2,
             }));
             assert_eq!(actual.collisions.len(), 0);
             assert_eq!(actual.size(), 2);
@@ -849,7 +857,7 @@ mod tests {
                     .clone(),
                 ResourceId {
                     data_size: FILE_SIZE_2,
-                    hash: CRC32_2
+                    hash: HASH_2
                 }
             )
         })
@@ -873,11 +881,11 @@ mod tests {
             assert_eq!(index.id2path.len(), 2);
             assert!(index.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_1,
-                hash: CRC32_1,
+                hash: HASH_1,
             }));
             assert!(index.id2path.contains_key(&ResourceId {
                 data_size: FILE_SIZE_2,
-                hash: CRC32_2,
+                hash: HASH_2,
             }));
             assert_eq!(index.collisions.len(), 0);
             assert_eq!(index.size(), 2);
@@ -894,7 +902,7 @@ mod tests {
                     .clone(),
                 ResourceId {
                     data_size: FILE_SIZE_2,
-                    hash: CRC32_2
+                    hash: HASH_2
                 }
             )
         })
@@ -913,7 +921,7 @@ mod tests {
                 &new_path,
                 ResourceId {
                     data_size: FILE_SIZE_2,
-                    hash: CRC32_2,
+                    hash: HASH_2,
                 },
             );
 
@@ -938,7 +946,7 @@ mod tests {
                     &file_path.clone(),
                     ResourceId {
                         data_size: FILE_SIZE_1,
-                        hash: CRC32_1,
+                        hash: HASH_1,
                     },
                 )
                 .expect("Should update index successfully");
@@ -953,7 +961,7 @@ mod tests {
 
             assert!(update.deleted.contains(&ResourceId {
                 data_size: FILE_SIZE_1,
-                hash: CRC32_1
+                hash: HASH_1
             }))
         })
     }
@@ -997,7 +1005,7 @@ mod tests {
             let mut actual = ResourceIndex::build(path.clone());
             let old_id = ResourceId {
                 data_size: 1,
-                hash: 2,
+                hash: HASH_1,
             };
             let result = actual
                 .update_one(&missing_path, old_id)
@@ -1009,7 +1017,7 @@ mod tests {
                 result,
                 Some(ResourceId {
                     data_size: 1,
-                    hash: 2,
+                    hash: HASH_1,
                 })
             );
         })
@@ -1023,7 +1031,7 @@ mod tests {
             let mut actual = ResourceIndex::build(path.clone());
             let old_id = ResourceId {
                 data_size: 1,
-                hash: 2,
+                hash: HASH_1,
             };
             let result = actual
                 .update_one(&missing_path, old_id)
@@ -1035,7 +1043,7 @@ mod tests {
                 result,
                 Some(ResourceId {
                     data_size: 1,
-                    hash: 2,
+                    hash: HASH_1,
                 })
             );
         })
@@ -1096,14 +1104,14 @@ mod tests {
         let old1 = IndexEntry {
             id: ResourceId {
                 data_size: 1,
-                hash: 2,
+                hash: HASH_2,
             },
             modified: SystemTime::UNIX_EPOCH,
         };
         let old2 = IndexEntry {
             id: ResourceId {
                 data_size: 2,
-                hash: 1,
+                hash: HASH_1,
             },
             modified: SystemTime::UNIX_EPOCH,
         };
@@ -1111,14 +1119,14 @@ mod tests {
         let new1 = IndexEntry {
             id: ResourceId {
                 data_size: 1,
-                hash: 1,
+                hash: HASH_1,
             },
             modified: SystemTime::now(),
         };
         let new2 = IndexEntry {
             id: ResourceId {
                 data_size: 1,
-                hash: 2,
+                hash: HASH_2,
             },
             modified: SystemTime::now(),
         };

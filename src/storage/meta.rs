@@ -80,7 +80,11 @@ mod tests {
         log::debug!("temporary root: {}", root.display());
 
         let id = ResourceId {
-            hash: 0x342a3d4a,
+            hash: [
+                23, 43, 75, 241, 72, 232, 88, 177, 61, 222, 15, 198, 97, 52,
+                19, 188, 183, 85, 46, 92, 78, 92, 69, 25, 90, 198, 200, 15, 32,
+                235, 95, 245,
+            ],
             data_size: 1,
         };
 
