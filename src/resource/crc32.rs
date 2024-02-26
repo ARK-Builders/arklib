@@ -16,6 +16,9 @@ const KILOBYTE: u64 = 1024;
 const MEGABYTE: u64 = 1024 * KILOBYTE;
 const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
 
+/// Represents a resource identifier using the CRC32 algorithm.
+///
+/// Uses `crc32fast` crate to compute the hash value.
 #[derive(
     Eq,
     Ord,
