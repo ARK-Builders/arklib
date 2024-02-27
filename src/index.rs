@@ -47,9 +47,9 @@ pub struct IndexEntry {
 pub struct ResourceIndex {
     /// A mapping of resource IDs to their corresponding file paths
     #[serde_as(as = "Vec<(_, _)>")]
-    pub id2path: HashMap<ResourceId, PathBuf>,
+    id2path: HashMap<ResourceId, PathBuf>,
     /// A mapping of file paths to their corresponding index entries
-    pub path2id: HashMap<PathBuf, IndexEntry>,
+    path2id: HashMap<PathBuf, IndexEntry>,
     /// A mapping of resource IDs to the number of collisions they have
     pub collisions: HashMap<ResourceId, usize>,
     /// The root path of the index
@@ -76,8 +76,13 @@ impl ResourceIndex {
     /// Returns the number of entries in the index
     ///
     /// Note that the amount of resource can be lower in presence of collisions
-    pub fn size(&self) -> usize {
+    pub fn count_files(&self) -> usize {
         self.path2id.len()
+    }
+
+    /// Returns the number of resources in the index
+    pub fn count_resources(&self) -> usize {
+        self.id2path.len()
     }
 
     /// Builds a new resource index from scratch using the root path
@@ -781,7 +786,7 @@ mod tests {
             crc32: CRC32_1,
         }));
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 1);
+        assert_eq!(actual.count_files(), 1);
     }
 
     #[test]
@@ -804,7 +809,7 @@ mod tests {
             crc32: CRC32_1,
         }));
         assert_eq!(actual.collisions.len(), 1);
-        assert_eq!(actual.size(), 2);
+        assert_eq!(actual.count_files(), 2);
     }
 
     #[test]
@@ -818,7 +823,7 @@ mod tests {
         let mut actual = ResourceIndex::build(path.to_owned());
 
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 2);
+        assert_eq!(actual.count_files(), 2);
 
         // rename test2.txt to test3.txt
         let mut name_from = path.to_owned();
@@ -833,7 +838,7 @@ mod tests {
             .expect("Should update index correctly");
 
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 2);
+        assert_eq!(actual.count_files(), 2);
         assert_eq!(update.deleted.len(), 1);
         assert_eq!(update.added.len(), 1);
     }
@@ -866,7 +871,7 @@ mod tests {
             crc32: CRC32_2,
         }));
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 2);
+        assert_eq!(actual.count_files(), 2);
         assert_eq!(update.deleted.len(), 0);
         assert_eq!(update.added.len(), 1);
 
@@ -935,7 +940,7 @@ mod tests {
             crc32: CRC32_2,
         }));
         assert_eq!(index.collisions.len(), 0);
-        assert_eq!(index.size(), 2);
+        assert_eq!(index.count_files(), 2);
         assert_eq!(update.deleted.len(), 0);
         assert_eq!(update.added.len(), 1);
 
@@ -1004,7 +1009,7 @@ mod tests {
         assert_eq!(actual.path2id.len(), 0);
         assert_eq!(actual.id2path.len(), 0);
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 0);
+        assert_eq!(actual.count_files(), 0);
         assert_eq!(update.deleted.len(), 1);
         assert_eq!(update.added.len(), 0);
 
@@ -1026,7 +1031,7 @@ mod tests {
         let mut actual = ResourceIndex::build(path.clone());
 
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 2);
+        assert_eq!(actual.count_files(), 2);
         #[cfg(target_family = "unix")]
         file.set_permissions(Permissions::from_mode(0o222))
             .expect("Should be fine");
@@ -1036,7 +1041,7 @@ mod tests {
             .expect("Should update index correctly");
 
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 2);
+        assert_eq!(actual.count_files(), 2);
         assert_eq!(update.deleted.len(), 0);
         assert_eq!(update.added.len(), 0);
     }
@@ -1208,7 +1213,7 @@ mod tests {
             crc32: CRC32_1,
         }));
         assert_eq!(actual.collisions.len(), 0);
-        assert_eq!(actual.size(), 1);
+        assert_eq!(actual.count_files(), 1);
     }
 
     #[test]
