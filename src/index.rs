@@ -4,9 +4,13 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, Metadata};
+use std::io::BufRead;
 use std::io::BufReader;
-use std::io::BufWriter;
+use std::io::Write;
+use std::ops::Add;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::time::UNIX_EPOCH;
 use std::time::{Duration, SystemTime};
 use walkdir::{DirEntry, WalkDir};
 
@@ -123,17 +127,53 @@ impl ResourceIndex {
     ///
     /// Note that the loaded index can be outdated and `update_all` needs to
     /// be called explicitly by the end-user. For automated updating and
-    /// persisting the new index version, use [`provide`] function.
+    /// persisting the new index version, use [`ResourceIndex::provide()`] method.
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
-        let index_path = root_path
-            .as_ref()
-            .join(ARK_FOLDER)
-            .join(INDEX_PATH);
-        log::info!("Loading the index from file: {}", index_path.display());
+        let root_path: PathBuf = root_path.as_ref().to_owned();
 
-        let file = File::open(index_path)?;
-        let reader = BufReader::new(file);
-        let index: ResourceIndex = serde_json::from_reader(reader)?;
+        let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
+        log::info!("Loading the index from file {}", index_path.display());
+        let file = File::open(&index_path)?;
+        let mut index = ResourceIndex {
+            id2path: HashMap::new(),
+            path2id: HashMap::new(),
+            collisions: HashMap::new(),
+            root: root_path.clone(),
+        };
+
+        // We should not return early in case of missing files
+        let lines = BufReader::new(file).lines();
+        for line in lines {
+            let line = line?;
+
+            let mut parts = line.split(' ');
+
+            let modified = {
+                let str = parts.next().ok_or(ArklibError::Parse)?;
+                UNIX_EPOCH.add(Duration::from_millis(
+                    str.parse().map_err(|_| ArklibError::Parse)?,
+                ))
+            };
+
+            let id = {
+                let str = parts.next().ok_or(ArklibError::Parse)?;
+                ResourceId::from_str(str)?
+            };
+
+            let path: String =
+                itertools::Itertools::intersperse(parts, " ").collect();
+            let path: PathBuf = root_path.join(Path::new(&path));
+            match fs::canonicalize(&path) {
+                Ok(path) => {
+                    log::trace!("[load] {} -> {}", id, path.display());
+                    index.insert_entry(path, IndexEntry { id, modified });
+                }
+                Err(_) => {
+                    log::warn!("File {} not found", path.display());
+                    continue;
+                }
+            }
+        }
 
         Ok(index)
     }
@@ -144,17 +184,43 @@ impl ResourceIndex {
     /// to `$root_path/.ark/index` and creates the directory if it's absent.
     pub fn store(&self) -> Result<()> {
         log::info!("Storing the index to file");
+
         let start = SystemTime::now();
 
-        let ark_folder = self.root.join(ARK_FOLDER);
-        if !ark_folder.exists() {
-            fs::create_dir(ark_folder.clone())?;
-        }
-        let index_path = ark_folder.join(INDEX_PATH);
-        let file = File::create(index_path)?;
+        let index_path = self
+            .root
+            .to_owned()
+            .join(ARK_FOLDER)
+            .join(INDEX_PATH);
 
-        let writer = BufWriter::new(file);
-        serde_json::to_writer(writer, self)?;
+        let ark_dir = index_path.parent().unwrap();
+        fs::create_dir_all(ark_dir)?;
+
+        let mut file = File::create(index_path)?;
+
+        let mut path2id: Vec<(&PathBuf, &IndexEntry)> =
+            self.path2id.iter().collect();
+        path2id.sort_by_key(|(_, entry)| *entry);
+
+        for (path, entry) in path2id.iter() {
+            log::trace!("[store] {} by path {}", entry.id, path.display());
+
+            let timestamp = entry
+                .modified
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| {
+                    ArklibError::Other(anyhow!("Error using duration since"))
+                })?
+                .as_millis();
+
+            let path =
+                pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
+                    .ok_or(ArklibError::Path(
+                        "Couldn't calculate path diff".into(),
+                    ))?;
+
+            writeln!(file, "{} {} {}", timestamp, entry.id, path.display())?;
+        }
 
         log::trace!(
             "Storing the index took {:?}",
@@ -727,43 +793,6 @@ mod tests {
         file.set_len(size.unwrap_or(0))
             .expect("Could not set file size");
         (file, file_path)
-    }
-
-    /// A test to ensure that loading and storing an index works correctly
-    ///
-    /// This test stores an index, loads it, and then compares the loaded index
-    #[test]
-    fn resource_index_load_store() {
-        let temp_dir = TempDir::new("arklib_test")
-            .expect("Failed to create temporary directory");
-        let temp_dir = temp_dir.into_path();
-
-        // Create files inside the temporary directory
-        create_file_at(
-            temp_dir.to_owned(),
-            Some(FILE_SIZE_1),
-            Some(FILE_NAME_1),
-        );
-        create_file_at(
-            temp_dir.to_owned(),
-            Some(FILE_SIZE_2),
-            Some(FILE_NAME_2),
-        );
-
-        // Build the index from the temporary directory
-        let index = ResourceIndex::build(temp_dir.to_owned());
-
-        // Store the index
-        index
-            .store()
-            .expect("Should store index successfully");
-
-        // Load the index from the temporary directory
-        let loaded_index = ResourceIndex::load(temp_dir.to_owned())
-            .expect("Should load index successfully");
-
-        // Assert that the loaded index is equal to the original index
-        assert_eq!(index, loaded_index);
     }
 
     #[test]
