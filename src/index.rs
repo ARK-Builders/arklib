@@ -130,6 +130,7 @@ impl ResourceIndex {
     /// persisting the new index version, use [`ResourceIndex::provide()`] method.
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         let root_path: PathBuf = root_path.as_ref().to_owned();
+        let root_path = fs::canonicalize(&root_path)?;
 
         let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
         log::info!("Loading the index from file {}", index_path.display());
