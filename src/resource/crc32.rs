@@ -31,18 +31,18 @@ const BUFFER_CAPACITY: usize = 512 * KILOBYTE as usize;
     Deserialize,
     Serialize,
 )]
-pub struct ResourceIdCrc32 {
+pub struct ResourceId {
     pub data_size: u64,
     pub hash: u32,
 }
 
-impl Display for ResourceIdCrc32 {
+impl Display for ResourceId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}-{}", self.data_size, self.hash)
     }
 }
 
-impl FromStr for ResourceIdCrc32 {
+impl FromStr for ResourceId {
     type Err = ArklibError;
 
     fn from_str(s: &str) -> Result<Self> {
@@ -50,11 +50,11 @@ impl FromStr for ResourceIdCrc32 {
         let data_size: u64 = l.parse().map_err(|_| ArklibError::Parse)?;
         let hash: u32 = r.parse().map_err(|_| ArklibError::Parse)?;
 
-        Ok(ResourceIdCrc32 { data_size, hash })
+        Ok(ResourceId { data_size, hash })
     }
 }
 
-impl ResourceIdTrait<'_> for ResourceIdCrc32 {
+impl ResourceIdTrait<'_> for ResourceId {
     type HashType = u32;
 
     fn get_hash(&self) -> Self::HashType {
@@ -73,7 +73,7 @@ impl ResourceIdTrait<'_> for ResourceIdCrc32 {
             .open(file_path.as_ref())?;
 
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, source);
-        ResourceIdCrc32::compute_reader(data_size, &mut reader)
+        ResourceId::compute_reader(data_size, &mut reader)
     }
 
     fn compute_bytes(bytes: &[u8]) -> Result<Self> {
@@ -81,7 +81,7 @@ impl ResourceIdTrait<'_> for ResourceIdCrc32 {
             ArklibError::Other(anyhow!("Can't convert usize to u64"))
         })?; //.unwrap();
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, bytes);
-        ResourceIdCrc32::compute_reader(data_size, &mut reader)
+        ResourceId::compute_reader(data_size, &mut reader)
     }
 
     fn compute_reader<R: Read>(
@@ -115,7 +115,7 @@ impl ResourceIdTrait<'_> for ResourceIdCrc32 {
         log::trace!("[compute] checksum: {:#02x}", hash);
         assert_eq!(std::convert::Into::<u64>::into(bytes_read), data_size);
 
-        Ok(ResourceIdCrc32 { data_size, hash })
+        Ok(ResourceId { data_size, hash })
     }
 }
 
@@ -139,23 +139,23 @@ mod tests {
             })
             .len();
 
-        let id1 = ResourceIdCrc32::compute(data_size, file_path).unwrap();
+        let id1 = ResourceId::compute(data_size, file_path).unwrap();
         assert_eq!(id1.get_hash(), 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
-        let id2 = ResourceIdCrc32::compute_bytes(raw_bytes.as_slice()).unwrap();
+        let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
         assert_eq!(id2.get_hash(), 0x342a3d4a);
         assert_eq!(id2.data_size, 128760);
     }
 
     #[test]
     fn resource_id_order() {
-        let id1 = ResourceIdCrc32 {
+        let id1 = ResourceId {
             data_size: 1,
             hash: 2,
         };
-        let id2 = ResourceIdCrc32 {
+        let id2 = ResourceId {
             data_size: 2,
             hash: 1,
         };

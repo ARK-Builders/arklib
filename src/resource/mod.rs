@@ -11,7 +11,7 @@ use crate::Result;
 
 mod crc32;
 
-pub use crc32::ResourceIdCrc32 as ResourceId;
+pub use crc32::ResourceId;
 
 /// This trait defines a generic type representing a resource identifier.
 ///
