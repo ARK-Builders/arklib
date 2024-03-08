@@ -130,7 +130,7 @@ impl ResourceIndex {
     /// persisting the new index version, use [`ResourceIndex::provide()`] method.
     pub fn load<P: AsRef<Path>>(root_path: P) -> Result<Self> {
         let root_path: PathBuf = root_path.as_ref().to_owned();
-        let root_path = fs::canonicalize(&root_path)?;
+        let root_path = fs::canonicalize(root_path)?;
 
         let index_path: PathBuf = root_path.join(ARK_FOLDER).join(INDEX_PATH);
         log::info!("Loading the index from file {}", index_path.display());
@@ -151,7 +151,7 @@ impl ResourceIndex {
 
             let modified = {
                 let str = parts.next().ok_or(ArklibError::Parse)?;
-                UNIX_EPOCH.add(Duration::from_millis(
+                UNIX_EPOCH.add(Duration::from_nanos(
                     str.parse().map_err(|_| ArklibError::Parse)?,
                 ))
             };
@@ -212,7 +212,7 @@ impl ResourceIndex {
                 .map_err(|_| {
                     ArklibError::Other(anyhow!("Error using duration since"))
                 })?
-                .as_millis();
+                .as_nanos();
 
             let path =
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
@@ -794,6 +794,30 @@ mod tests {
         file.set_len(size.unwrap_or(0))
             .expect("Could not set file size");
         (file, file_path)
+    }
+
+    #[test]
+    fn resource_index_load_store() {
+        let temp_dir = TempDir::new("arklib_test")
+            .expect("Failed to create temporary directory");
+        let temp_dir = temp_dir.into_path();
+
+        create_file_at(
+            temp_dir.to_owned(),
+            Some(FILE_SIZE_1),
+            Some(FILE_NAME_1),
+        );
+        let index = ResourceIndex::build(temp_dir.to_owned());
+
+        index
+            .store()
+            .expect("Should store index successfully");
+
+        let loaded_index = ResourceIndex::load(temp_dir.to_owned())
+            .expect("Should load index successfully");
+
+        // Assert that the loaded index is equal to the original index
+        assert_eq!(index, loaded_index);
     }
 
     #[test]
