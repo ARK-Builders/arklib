@@ -609,7 +609,7 @@ impl ResourceIndex {
                 "Any collision must involve at least 2 resources"
             );
             *collisions -= 1;
-            if *collisions <= 1 {
+            if *collisions == 1 {
                 self.collisions.remove(&old_id);
             }
 
