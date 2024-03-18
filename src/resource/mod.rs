@@ -36,9 +36,6 @@ pub trait ResourceIdTrait<'de>:
     /// Associated type representing the hash used by this resource identifier.
     type HashType;
 
-    /// Returns the hash value of the resource.
-    fn get_hash(&self) -> Self::HashType;
-
     /// Creates a new resource identifier from the given path.
     ///
     /// # Arguments

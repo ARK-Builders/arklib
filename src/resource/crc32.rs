@@ -57,10 +57,6 @@ impl FromStr for ResourceId {
 impl ResourceIdTrait<'_> for ResourceId {
     type HashType = u32;
 
-    fn get_hash(&self) -> Self::HashType {
-        self.hash
-    }
-
     fn compute<P: AsRef<Path>>(data_size: u64, file_path: P) -> Result<Self> {
         log::trace!(
             "[compute] file {} with size {} mb",
@@ -140,12 +136,12 @@ mod tests {
             .len();
 
         let id1 = ResourceId::compute(data_size, file_path).unwrap();
-        assert_eq!(id1.get_hash(), 0x342a3d4a);
+        assert_eq!(id1.hash, 0x342a3d4a);
         assert_eq!(id1.data_size, 128760);
 
         let raw_bytes = fs::read(file_path).unwrap();
         let id2 = ResourceId::compute_bytes(raw_bytes.as_slice()).unwrap();
-        assert_eq!(id2.get_hash(), 0x342a3d4a);
+        assert_eq!(id2.hash, 0x342a3d4a);
         assert_eq!(id2.data_size, 128760);
     }
 
