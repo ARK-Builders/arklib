@@ -151,7 +151,7 @@ impl ResourceIndex {
 
             let modified = {
                 let str = parts.next().ok_or(ArklibError::Parse)?;
-                UNIX_EPOCH.add(Duration::from_nanos(
+                UNIX_EPOCH.add(Duration::from_millis(
                     str.parse().map_err(|_| ArklibError::Parse)?,
                 ))
             };
@@ -212,7 +212,7 @@ impl ResourceIndex {
                 .map_err(|_| {
                     ArklibError::Other(anyhow!("Error using duration since"))
                 })?
-                .as_nanos();
+                .as_millis();
 
             let path =
                 pathdiff::diff_paths(path.to_str().unwrap(), self.root.clone())
@@ -712,6 +712,15 @@ fn scan_entry(path: &Path, metadata: Metadata) -> Result<IndexEntry> {
 
     let id = ResourceId::compute(size, path)?;
     let modified = metadata.modified()?;
+
+    // We need to keep precision up to milliseconds only to avoid
+    // compatibility issues with different file systems (eg. Android)
+    let duration = modified
+        .duration_since(UNIX_EPOCH)
+        .expect("SystemTime before UNIX EPOCH!")
+        .as_millis();
+    let modified =
+        UNIX_EPOCH + std::time::Duration::from_millis(duration as u64);
 
     Ok(IndexEntry { id, modified })
 }
