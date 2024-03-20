@@ -17,7 +17,7 @@ env_logger = "0.9.0"
 lazy_static = "1.4.0"
 canonical-path = "2.0.2"
 pathdiff = "0.2.1"
-image = "0.24.2"
+image = "0.25"
 pdfium-render = { git = "https://github.com/ajrcarey/pdfium-render", rev = "d2559c1", features = [
     "thread_safe",
     "sync",
