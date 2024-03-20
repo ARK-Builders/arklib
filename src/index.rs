@@ -38,12 +38,6 @@ pub struct IndexEntry {
 /// paths to index entries, which are simply resource IDs with modification
 /// timestamps.
 ///
-/// The paths stored in the mappings are not absolute paths, but are relative
-/// to the "root". See methods `TODO` and `TODO` in the API, which can provide
-/// the end users with absolute/canonical(TODO) paths for the convenince.
-/// Otherwise, the end user is responsible for managing the working dir
-/// and relative paths resolution.
-///
 /// Additionally, it keeps track of collisions that occur during
 /// indexing using non-cryptographic hash functions.
 #[serde_as]
