@@ -3,7 +3,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 use std::path::Path;
 
-use crate::id::ResourceId;
+use crate::resource::ResourceId;
 use crate::{Result, ARK_FOLDER, METADATA_STORAGE_FOLDER};
 
 pub fn store_metadata<

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::io::Read;
 use std::path::Path;
 
-use crate::id::ResourceId;
+use crate::resource::ResourceId;
 use crate::util::json::merge;
 use crate::{Result, ARK_FOLDER, PROPERTIES_STORAGE_FOLDER};
 
@@ -81,7 +81,7 @@ mod tests {
         log::debug!("temporary root: {}", root.display());
 
         let id = ResourceId {
-            crc32: 0x342a3d4a,
+            hash: 0x342a3d4a,
             data_size: 1,
         };
 
